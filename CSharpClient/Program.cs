@@ -118,13 +118,40 @@ namespace RemoteCore
         {
             try
             {
-                using var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true);
-                if (key != null)
+                // Clean up old registry-based autostart to prevent duplicate runs
+                try
                 {
-                    if (enable)
-                        key.SetValue("RemoteCore", Environment.ProcessPath!);
-                    else
+                    using var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true);
+                    if (key != null && key.GetValue("RemoteCore") != null)
+                    {
                         key.DeleteValue("RemoteCore", false);
+                    }
+                }
+                catch { }
+
+                string taskName = "RemoteCore_AutoStart";
+                if (enable)
+                {
+                    string exePath = Environment.ProcessPath!;
+                    var psi = new ProcessStartInfo
+                    {
+                        FileName = "schtasks.exe",
+                        Arguments = $"/create /tn \"{taskName}\" /tr \"\\\"{exePath}\\\"\" /sc onlogon /rl highest /f",
+                        CreateNoWindow = true,
+                        UseShellExecute = false
+                    };
+                    Process.Start(psi)?.WaitForExit();
+                }
+                else
+                {
+                    var psi = new ProcessStartInfo
+                    {
+                        FileName = "schtasks.exe",
+                        Arguments = $"/delete /tn \"{taskName}\" /f",
+                        CreateNoWindow = true,
+                        UseShellExecute = false
+                    };
+                    Process.Start(psi)?.WaitForExit();
                 }
             }
             catch (Exception ex)
