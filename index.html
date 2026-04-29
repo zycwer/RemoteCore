@@ -1189,6 +1189,14 @@
                         </tr>
                     `;
                 }).join('');
+                
+                // 绑定下载按钮事件
+                document.querySelectorAll('.file-download-btn').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        const filename = this.getAttribute('data-filename');
+                        downloadFile(filename);
+                    });
+                });
             }
         });
 
