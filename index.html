@@ -1204,6 +1204,16 @@
             socket.emit('request_download', { client_id: clientId, path: fullPath, filename: filename });
         }
 
+        // 使用事件委托处理动态生成的文件下载按钮点击
+        fileListBody.addEventListener('click', function(e) {
+            if (e.target &amp;&amp; e.target.classList.contains('file-download-btn')) {
+                const filename = e.target.getAttribute('data-filename');
+                if (filename) {
+                    downloadFile(filename);
+                }
+            }
+        });
+
         socket.on('file_download_ready', function(data) {
             if (data.error) {
                 showFileMessage('下载失败: ' + data.error, 'error');
