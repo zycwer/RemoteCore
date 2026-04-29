@@ -554,7 +554,7 @@ namespace RemoteCore
             Console.WriteLine("VNC Loop started");
             
             // 提取出循环外以减少分配和提高性能
-            var encoder = ImageCodecInfo.GetImageDecoders().FirstOrDefault(c => c.FormatID == ImageFormat.Jpeg.Guid);
+            var encoder = ImageCodecInfo.GetImageEncoders().FirstOrDefault(c => c.FormatID == ImageFormat.Jpeg.Guid);
             using var encoderParams = new EncoderParameters(1);
             encoderParams.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, (long)VncQuality); // 使用配置的质量
 
