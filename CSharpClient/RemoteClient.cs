@@ -26,8 +26,8 @@ namespace RemoteCore
     {
         private readonly SocketIOClientSocket _socket;
         private readonly HttpClient _httpClient;
-        private readonly string _serverUrl = "http://127.0.0.1:5000";
-        private readonly string _authToken = "zyc2010817";
+        private readonly string _serverUrl = Environment.GetEnvironmentVariable("REMOTECORE_SERVER_URL") ?? "http://127.0.0.1:5000";
+        private readonly string _authToken = Environment.GetEnvironmentVariable("REMOTECORE_AUTH_TOKEN") ?? "admin123";
         private bool _isRunning = false;
         private bool _vncActive = false;
         private bool _cameraInitialized = false;

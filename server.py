@@ -5,14 +5,16 @@ import os
 import uuid
 from datetime import datetime
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(24).hex())
 socketio = SocketIO(app, cors_allowed_origins=os.environ.get('CORS_ORIGINS', '*').split(','))
 
 # 配置
-PHOTO_DIR = 'photos'
-DOWNLOADS_DIR = 'downloads'
-UPLOADS_DIR = 'uploads'
+PHOTO_DIR = os.path.join(BASE_DIR, 'photos')
+DOWNLOADS_DIR = os.path.join(BASE_DIR, 'downloads')
+UPLOADS_DIR = os.path.join(BASE_DIR, 'uploads')
 CLIENT_ROOM = 'clients'
 SERVER_HOST = '0.0.0.0'
 SERVER_PORT = 5000
@@ -21,8 +23,8 @@ SERVER_PORT = 5000
 AUTH_TOKEN = os.environ.get('AUTH_TOKEN')
 if not AUTH_TOKEN:
     import logging
-    logging.warning("AUTH_TOKEN environment variable not set! Using default insecure token 'admin123'. Please set AUTH_TOKEN in production.")
-    AUTH_TOKEN = 'zyc2010817'
+    logging.warning("AUTH_TOKEN environment variable not set! Using default token 'admin123'.")
+    AUTH_TOKEN = 'admin123'
 
 # 文件上传配置
 MAX_PHOTOS = 1000
@@ -72,7 +74,7 @@ def require_auth():
 
 @app.route('/')
 def index():
-    return send_from_directory('.', 'index.html')
+    return send_from_directory(BASE_DIR, 'index.html')
 
 @app.route('/photos')
 def get_photos():

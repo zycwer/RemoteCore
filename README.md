@@ -76,6 +76,11 @@ python server.py
   private readonly string _authToken = "admin123";                // 替换为与服务器一致的认证 token
   ```
 
+也可以通过环境变量覆盖默认值：
+
+- `REMOTECORE_SERVER_URL`：服务器地址（默认 `http://127.0.0.1:5000`）
+- `REMOTECORE_AUTH_TOKEN`：认证 Token（默认 `admin123`）
+
 ### 3. C# 客户端编译
 
 **环境要求**：.NET 6.0 SDK 或以上

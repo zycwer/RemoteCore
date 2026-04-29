@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.pyo
+
+.venv/
+venv/
+ENV/
+
+photos/
+uploads/
+downloads/
+
+bin/
+obj/
+*.user
+*.suo
