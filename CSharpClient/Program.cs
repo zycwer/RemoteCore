@@ -13,23 +13,30 @@ namespace RemoteCore
 
         static void Main(string[] args)
         {
+            Console.WriteLine($"Starting RemoteCore, current user: {WindowsIdentity.GetCurrent().Name}");
+            Console.WriteLine($"Is admin: {IsAdministrator()}");
+
             if (!IsAdministrator())
             {
+                Console.WriteLine("Not running as admin, trying to elevate...");
                 RunAsAdmin();
                 return;
             }
 
+            Console.WriteLine("Running as admin, checking installation...");
             if (InstallToProgramFiles())
             {
                 return; // Exits if it successfully copied and restarted
             }
 
+            Console.WriteLine("Starting main client...");
             bool createdNew;
             _mutex = new Mutex(true, "RemoteCore_Mutex_Unique_ID", out createdNew);
 
             if (!createdNew)
             {
                 // App is already running, exit.
+                Console.WriteLine("Another instance is already running, exiting...");
                 return;
             }
 
@@ -48,6 +55,7 @@ namespace RemoteCore
 
         static void RunAsAdmin()
         {
+            Console.WriteLine($"Attempting to run as admin: {Environment.ProcessPath}");
             var processInfo = new ProcessStartInfo(Environment.ProcessPath!)
             {
                 UseShellExecute = true,
@@ -56,10 +64,14 @@ namespace RemoteCore
             try
             {
                 Process.Start(processInfo);
+                Console.WriteLine("Admin process started successfully");
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error elevating: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                // 如果用户拒绝 UAC 提示，我们仍然可以尝试以普通用户身份运行
+                Console.WriteLine("User declined UAC or failed to elevate, continuing with limited privileges...");
             }
         }
 
@@ -67,7 +79,10 @@ namespace RemoteCore
         {
             // Do not self-copy if running from visual studio or uncompiled
             if (!Environment.ProcessPath!.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("Not running as compiled EXE, skipping installation");
                 return false;
+            }
 
             string programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
             string targetDir = Path.Combine(programFiles, "RemoteCore");
@@ -76,11 +91,13 @@ namespace RemoteCore
 
             if (currentPath.Equals(targetPath, StringComparison.OrdinalIgnoreCase))
             {
+                Console.WriteLine("Already running from Program Files");
                 return false; // Already running from target location
             }
 
             try
             {
+                Console.WriteLine($"Installing to Program Files: {targetPath}");
                 if (!Directory.Exists(targetDir))
                 {
                     Directory.CreateDirectory(targetDir);
@@ -88,6 +105,7 @@ namespace RemoteCore
 
                 if (File.Exists(targetPath))
                 {
+                    Console.WriteLine("Existing file found, trying to remove...");
                     var oldProcesses = Process.GetProcessesByName(Path.GetFileNameWithoutExtension(targetPath));
                     foreach (var p in oldProcesses)
                     {
@@ -104,12 +122,20 @@ namespace RemoteCore
                 File.SetAttributes(targetPath, FileAttributes.Hidden | FileAttributes.System);
                 File.SetAttributes(targetDir, FileAttributes.Hidden | FileAttributes.System);
 
-                Process.Start(targetPath);
+                Console.WriteLine("Starting from Program Files...");
+                // 确保以管理员权限重新启动
+                var psi = new ProcessStartInfo(targetPath)
+                {
+                    UseShellExecute = true,
+                    Verb = "runas"
+                };
+                Process.Start(psi);
                 return true;
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Error installing to Program Files: {ex.Message}");
+                Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 return false;
             }
         }
