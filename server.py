@@ -4,22 +4,12 @@ from werkzeug.utils import secure_filename
 import os
 import uuid
 from datetime import datetime
-from functools import wraps
-import time
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(24).hex())
-# 优化 SocketIO 配置以提高大文件传输性能
-socketio = SocketIO(
-    app, 
-    cors_allowed_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
-    async_mode='threading',
-    max_http_buffer_size=1024 * 1024 * 1024,  # 1GB 缓冲区
-    ping_timeout=60,
-    ping_interval=25
-)
+socketio = SocketIO(app, cors_allowed_origins=os.environ.get('CORS_ORIGINS', '*').split(','))
 
 # 配置
 PHOTO_DIR = os.path.join(BASE_DIR, 'photos')
@@ -40,15 +30,14 @@ if not AUTH_TOKEN:
 MAX_PHOTOS = 1000
 MAX_FILES_PER_DIR = 100
 ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png'}
-CHUNK_SIZE = 81920  # 80KB 分块大小
 
 # 确保目录存在
 os.makedirs(PHOTO_DIR, exist_ok=True)
 os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 
-# 允许上传大文件，例如 5GB
-app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024 * 1024
+# 允许上传大文件，例如 1GB
+app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024 * 1024
 
 # 客户端状态管理
 clients = {}
@@ -296,7 +285,7 @@ def client_upload_file():
 
 @app.route('/download_from_server/<folder>/<filename>')
 def download_from_server(folder, filename):
-    """提供文件下载服务（给客户端或网页端）- 优化版支持流式下载"""
+    """提供文件下载服务（给客户端或网页端）"""
     if folder not in ['uploads', 'downloads']:
         return jsonify({'error': 'Invalid folder'}), 400
         
@@ -319,30 +308,8 @@ def download_from_server(folder, filename):
         parts = safe_filename.split('_', 2)
         if len(parts) >= 3:
             original_name = parts[2]
-    
-    file_size = os.path.getsize(file_path)
-    print(f"Starting file download: {original_name} ({file_size / 1024 / 1024:.2f} MB)")
-    
-    # 生成器函数进行流式传输
-    def generate():
-        with open(file_path, 'rb') as f:
-            while True:
-                chunk = f.read(CHUNK_SIZE)
-                if not chunk:
-                    break
-                yield chunk
-    
-    response = Response(
-        generate(),
-        mimetype='application/octet-stream',
-        headers={
-            'Content-Disposition': f'attachment; filename="{original_name}"',
-            'Content-Length': str(file_size),
-            'Accept-Ranges': 'bytes'
-        }
-    )
-    
-    return response
+            
+    return send_from_directory(dir_path, safe_filename, as_attachment=True, download_name=original_name)
 
 # 使用循环简化路由注册，但需要注意闭包参数捕获以及验证
 def _create_event_handler(evt):
