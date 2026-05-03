@@ -1246,6 +1246,15 @@
             showFileTransfer(name ? `传输中：${name}` : '文件传输中');
             fileTransferPercent.textContent = '0%';
             fileTransferBar.style.width = '0%';
+
+            if (data.mode === 'stream' && data.direction === 'client_to_web' && data.stream_url) {
+                const a = document.createElement('a');
+                a.href = data.stream_url;
+                if (data.filename) a.download = data.filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            }
         });
 
         socket.on('file_transfer_progress', function(data) {
@@ -1597,12 +1606,7 @@
             uploadFileBtn.disabled = true;
             uploadFileBtn.innerHTML = '上传中...';
             showMessage(fileMessage, `正在上传 ${file.name} 到服务器...`, 'info');
-            
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('client_id', clientId);
-            formData.append('target_dir', targetPath);
-            
+
             if (!socket.connected || !socket.id) {
                 showMessage(fileMessage, 'Socket 未连接，无法开始传输', 'error');
                 uploadFileBtn.disabled = false;
@@ -1611,52 +1615,111 @@
                 return;
             }
 
-            const transferId = createTransferId();
-            activeTransferId = transferId;
-            activeTransferStage = 'upload_to_server';
-            showFileTransfer(`上传到服务器：${file.name}`);
-            fileTransferPercent.textContent = '0%';
-            fileTransferBar.style.width = '0%';
+            function legacyUpload() {
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('client_id', clientId);
+                formData.append('target_dir', targetPath);
 
-            formData.append('transfer_id', transferId);
-            formData.append('web_sid', socket.id);
-            
-            const xhr = new XMLHttpRequest();
-            xhr.open('POST', '/upload_to_client', true);
+                const transferId = createTransferId();
+                activeTransferId = transferId;
+                activeTransferStage = 'upload_to_server';
+                showFileTransfer(`上传到服务器：${file.name}`);
+                fileTransferPercent.textContent = '0%';
+                fileTransferBar.style.width = '0%';
 
-            xhr.upload.onprogress = function(e) {
-                if (e.lengthComputable) {
-                    updateFileTransfer(e.loaded, e.total);
-                } else {
-                    updateFileTransfer(e.loaded, null);
-                }
-            };
+                formData.append('transfer_id', transferId);
+                formData.append('web_sid', socket.id);
 
-            xhr.onload = function() {
-                if (xhr.status >= 200 && xhr.status < 300) {
-                    activeTransferStage = null;
-                    showFileTransfer(`等待客户端下载：${file.name}`);
-                    fileTransferPercent.textContent = '100%';
-                    fileTransferBar.style.width = '100%';
-                    showMessage(fileMessage, '已上传到服务器，通知客户端下载...', 'info');
-                } else {
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', '/upload_to_client', true);
+                xhr.upload.onprogress = function(e) {
+                    if (e.lengthComputable) {
+                        updateFileTransfer(e.loaded, e.total);
+                    } else {
+                        updateFileTransfer(e.loaded, null);
+                    }
+                };
+                xhr.onload = function() {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        activeTransferStage = null;
+                        showFileTransfer(`等待客户端下载：${file.name}`);
+                        fileTransferPercent.textContent = '100%';
+                        fileTransferBar.style.width = '100%';
+                        showMessage(fileMessage, '已上传到服务器，通知客户端下载...', 'info');
+                    } else {
+                        hideFileTransfer();
+                        showMessage(fileMessage, '上传失败: ' + (xhr.responseText || '未知错误'), 'error');
+                        uploadFileBtn.disabled = false;
+                        uploadFileBtn.innerHTML = '📤 上传文件';
+                        document.getElementById('fileUploadInput').value = '';
+                    }
+                };
+                xhr.onerror = function() {
                     hideFileTransfer();
-                    showMessage(fileMessage, '上传失败: ' + (xhr.responseText || '未知错误'), 'error');
+                    showMessage(fileMessage, '上传失败: 网络错误', 'error');
                     uploadFileBtn.disabled = false;
                     uploadFileBtn.innerHTML = '📤 上传文件';
                     document.getElementById('fileUploadInput').value = '';
+                };
+                xhr.send(formData);
+            }
+
+            $.ajax({
+                url: '/stream/init_to_client',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({ client_id: clientId, target_dir: targetPath, filename: file.name, web_sid: socket.id }),
+                success: function(resp) {
+                    if (!resp || !resp.streaming || !resp.upload_url || !resp.transfer_id) {
+                        legacyUpload();
+                        return;
+                    }
+
+                    const transferId = resp.transfer_id;
+                    activeTransferId = transferId;
+                    activeTransferStage = 'upload_to_server';
+                    showFileTransfer(`上传到服务器：${file.name}`);
+                    fileTransferPercent.textContent = '0%';
+                    fileTransferBar.style.width = '0%';
+
+                    const xhr = new XMLHttpRequest();
+                    xhr.open('POST', resp.upload_url, true);
+                    xhr.upload.onprogress = function(e) {
+                        if (e.lengthComputable) {
+                            updateFileTransfer(e.loaded, e.total);
+                        } else {
+                            updateFileTransfer(e.loaded, null);
+                        }
+                    };
+                    xhr.onload = function() {
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            activeTransferStage = null;
+                            showFileTransfer(`等待客户端下载：${file.name}`);
+                            fileTransferPercent.textContent = '100%';
+                            fileTransferBar.style.width = '100%';
+                            showMessage(fileMessage, '已上传到服务器，通知客户端下载...', 'info');
+                        } else {
+                            hideFileTransfer();
+                            showMessage(fileMessage, '上传失败: ' + (xhr.responseText || '未知错误'), 'error');
+                            uploadFileBtn.disabled = false;
+                            uploadFileBtn.innerHTML = '📤 上传文件';
+                            document.getElementById('fileUploadInput').value = '';
+                        }
+                    };
+                    xhr.onerror = function() {
+                        hideFileTransfer();
+                        showMessage(fileMessage, '上传失败: 网络错误', 'error');
+                        uploadFileBtn.disabled = false;
+                        uploadFileBtn.innerHTML = '📤 上传文件';
+                        document.getElementById('fileUploadInput').value = '';
+                    };
+                    xhr.send(file);
+                },
+                error: function() {
+                    legacyUpload();
                 }
-            };
-
-            xhr.onerror = function() {
-                hideFileTransfer();
-                showMessage(fileMessage, '上传失败: 网络错误', 'error');
-                uploadFileBtn.disabled = false;
-                uploadFileBtn.innerHTML = '📤 上传文件';
-                document.getElementById('fileUploadInput').value = '';
-            };
-
-            xhr.send(formData);
+            });
         });
 
         // Photos
