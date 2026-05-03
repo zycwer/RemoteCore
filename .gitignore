@@ -9,6 +9,7 @@ ENV/
 photos/
 uploads/
 downloads/
+server/storage/
 
 bin/
 obj/
