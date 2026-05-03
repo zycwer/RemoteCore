@@ -8,16 +8,19 @@ import queue
 import time
 from urllib.parse import quote
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.abspath(os.path.join(SERVER_DIR, os.pardir))
+WEB_DIR = os.path.join(ROOT_DIR, 'web')
+STORAGE_DIR = os.path.join(SERVER_DIR, 'storage')
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(24).hex())
 socketio = SocketIO(app, cors_allowed_origins=os.environ.get('CORS_ORIGINS', '*').split(','))
 
 # 配置
-PHOTO_DIR = os.path.join(BASE_DIR, 'photos')
-DOWNLOADS_DIR = os.path.join(BASE_DIR, 'downloads')
-UPLOADS_DIR = os.path.join(BASE_DIR, 'uploads')
+PHOTO_DIR = os.path.join(STORAGE_DIR, 'photos')
+DOWNLOADS_DIR = os.path.join(STORAGE_DIR, 'downloads')
+UPLOADS_DIR = os.path.join(STORAGE_DIR, 'uploads')
 CLIENT_ROOM = 'clients'
 SERVER_HOST = '0.0.0.0'
 SERVER_PORT = 5000
@@ -35,6 +38,7 @@ MAX_FILES_PER_DIR = 100
 ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png'}
 
 # 确保目录存在
+os.makedirs(STORAGE_DIR, exist_ok=True)
 os.makedirs(PHOTO_DIR, exist_ok=True)
 os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 os.makedirs(UPLOADS_DIR, exist_ok=True)
@@ -132,7 +136,7 @@ def require_auth():
 
 @app.route('/')
 def index():
-    return send_from_directory(BASE_DIR, 'index.html')
+    return send_from_directory(WEB_DIR, 'index.html')
 
 @app.route('/photos')
 def get_photos():
