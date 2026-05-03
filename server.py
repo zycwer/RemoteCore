@@ -4,6 +4,9 @@ from werkzeug.utils import secure_filename
 import os
 import uuid
 from datetime import datetime
+import queue
+import time
+from urllib.parse import quote
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -39,8 +42,63 @@ os.makedirs(UPLOADS_DIR, exist_ok=True)
 # 允许上传大文件，例如 1GB
 app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024 * 1024
 
+STREAMING_ENABLED = os.environ.get('STREAMING_ENABLED', '1') != '0'
+STREAM_CHUNK_SIZE = 128 * 1024
+STREAM_QUEUE_MAX = 64
+STREAM_TRANSFER_TTL_SECONDS = 30 * 60
+
 # 客户端状态管理
 clients = {}
+transfers = {}
+
+def _now_ts():
+    return time.time()
+
+def _cleanup_transfers():
+    now = _now_ts()
+    expired = []
+    for tid, t in transfers.items():
+        if 'queue' not in t:
+            continue
+        created_at = t.get('created_at') or 0
+        if t.get('closed') or (now - created_at) > STREAM_TRANSFER_TTL_SECONDS:
+            expired.append(tid)
+    for tid in expired:
+        try:
+            del transfers[tid]
+        except KeyError:
+            pass
+
+def _new_transfer(direction, web_sid, client_id, filename, target_dir=None, path=None):
+    transfer_id = uuid.uuid4().hex
+    access_key = uuid.uuid4().hex
+    transfers[transfer_id] = {
+        'transfer_id': transfer_id,
+        'access_key': access_key,
+        'direction': direction,
+        'web_sid': web_sid,
+        'client_id': client_id,
+        'filename': filename,
+        'target_dir': target_dir,
+        'path': path,
+        'created_at': _now_ts(),
+        'queue': queue.Queue(maxsize=STREAM_QUEUE_MAX),
+        'closed': False,
+        'error': None,
+        'writer_started': False,
+        'reader_started': False
+    }
+    return transfers[transfer_id]
+
+def _get_transfer(transfer_id):
+    t = transfers.get(transfer_id)
+    if not t:
+        return None
+    return t
+
+def _require_transfer_key(t):
+    key = request.args.get('key') or ''
+    return key and key == t.get('access_key')
 
 @app.before_request
 def require_auth():
@@ -216,6 +274,8 @@ def upload_to_client():
     file = request.files['file']
     client_id = request.form.get('client_id')
     target_dir = request.form.get('target_dir')
+    transfer_id = request.form.get('transfer_id') or uuid.uuid4().hex
+    web_sid = request.form.get('web_sid')
     
     if not client_id or not target_dir:
         return jsonify({'error': 'Missing client_id or target_dir'}), 400
@@ -239,13 +299,21 @@ def upload_to_client():
     
     # 获取下载 URL (让客户端下载)
     download_url = f"{request.host_url.rstrip('/')}/download_from_server/uploads/{safe_filename}"
+
+    if web_sid:
+        transfers[transfer_id] = {
+            'web_sid': web_sid,
+            'client_id': client_id,
+            'filename': file.filename
+        }
     
     # 通知客户端下载该文件
     # file.filename 作为显示用的原始名，需前端进行 HTML 转义
     socketio.emit('download_file', {
         'url': download_url,
         'target_dir': target_dir,
-        'filename': file.filename
+        'filename': file.filename,
+        'transfer_id': transfer_id
     }, room=client_id)
     
     return jsonify({'success': True, 'message': 'File uploaded to server, notifying client'})
@@ -258,6 +326,7 @@ def client_upload_file():
         
     file = request.files['file']
     original_filename = request.form.get('filename', file.filename)
+    transfer_id = request.form.get('transfer_id')
     
     safe_filename = secure_filename(original_filename)
     if not safe_filename:
@@ -276,10 +345,12 @@ def client_upload_file():
     
     # 通知网页端文件已准备好下载
     download_url = f"/download_from_server/downloads/{save_filename}"
-    socketio.emit('file_download_ready', {
-        'url': download_url,
-        'filename': original_filename
-    })
+    payload = {'url': download_url, 'filename': original_filename, 'transfer_id': transfer_id}
+    if transfer_id and transfer_id in transfers and transfers[transfer_id].get('web_sid'):
+        socketio.emit('file_download_ready', payload, room=transfers[transfer_id]['web_sid'])
+        del transfers[transfer_id]
+    else:
+        socketio.emit('file_download_ready', payload)
     
     return jsonify({'success': True})
 
@@ -311,6 +382,170 @@ def download_from_server(folder, filename):
             
     return send_from_directory(dir_path, safe_filename, as_attachment=True, download_name=original_name)
 
+@app.route('/stream/download/<transfer_id>')
+def stream_download_to_web(transfer_id):
+    _cleanup_transfers()
+    t = _get_transfer(transfer_id)
+    if not t or t.get('direction') != 'client_to_web':
+        return jsonify({'error': 'Invalid transfer'}), 400
+    if not _require_transfer_key(t):
+        return jsonify({'error': 'Invalid transfer key'}), 403
+    if t.get('reader_started'):
+        return jsonify({'error': 'Transfer already started'}), 409
+    t['reader_started'] = True
+
+    filename = request.args.get('filename') or t.get('filename') or 'download.bin'
+    safe_filename = secure_filename(filename) or 'download.bin'
+
+    def gen():
+        try:
+            while True:
+                if t.get('closed'):
+                    break
+                try:
+                    chunk = t['queue'].get(timeout=1)
+                except queue.Empty:
+                    continue
+                if chunk is None:
+                    break
+                yield chunk
+        except GeneratorExit:
+            pass
+        finally:
+            t['closed'] = True
+
+    resp = Response(gen(), mimetype='application/octet-stream')
+    resp.headers['Content-Disposition'] = f'attachment; filename="{safe_filename}"'
+    return resp
+
+@app.route('/stream/upload_from_client/<transfer_id>', methods=['POST'])
+def stream_upload_from_client(transfer_id):
+    _cleanup_transfers()
+    t = _get_transfer(transfer_id)
+    if not t or t.get('direction') != 'client_to_web':
+        return jsonify({'error': 'Invalid transfer'}), 400
+    if not _require_transfer_key(t):
+        return jsonify({'error': 'Invalid transfer key'}), 403
+    if t.get('writer_started'):
+        return jsonify({'error': 'Transfer already started'}), 409
+    t['writer_started'] = True
+
+    try:
+        while True:
+            if t.get('closed'):
+                break
+            chunk = request.stream.read(STREAM_CHUNK_SIZE)
+            if not chunk:
+                break
+            t['queue'].put(chunk)
+    except Exception as e:
+        t['error'] = str(e)
+    finally:
+        try:
+            t['queue'].put(None, timeout=1)
+        except Exception:
+            pass
+    return jsonify({'success': True})
+
+@app.route('/stream/to_client/<transfer_id>')
+def stream_download_to_client(transfer_id):
+    _cleanup_transfers()
+    t = _get_transfer(transfer_id)
+    if not t or t.get('direction') != 'web_to_client':
+        return jsonify({'error': 'Invalid transfer'}), 400
+    if not _require_transfer_key(t):
+        return jsonify({'error': 'Invalid transfer key'}), 403
+    if t.get('reader_started'):
+        return jsonify({'error': 'Transfer already started'}), 409
+    t['reader_started'] = True
+
+    def gen():
+        try:
+            while True:
+                if t.get('closed'):
+                    break
+                try:
+                    chunk = t['queue'].get(timeout=1)
+                except queue.Empty:
+                    continue
+                if chunk is None:
+                    break
+                yield chunk
+        except GeneratorExit:
+            pass
+        finally:
+            t['closed'] = True
+
+    return Response(gen(), mimetype='application/octet-stream')
+
+@app.route('/stream/from_web/<transfer_id>', methods=['POST'])
+def stream_upload_from_web(transfer_id):
+    _cleanup_transfers()
+    t = _get_transfer(transfer_id)
+    if not t or t.get('direction') != 'web_to_client':
+        return jsonify({'error': 'Invalid transfer'}), 400
+    if not _require_transfer_key(t):
+        return jsonify({'error': 'Invalid transfer key'}), 403
+    if t.get('writer_started'):
+        return jsonify({'error': 'Transfer already started'}), 409
+    t['writer_started'] = True
+
+    try:
+        while True:
+            if t.get('closed'):
+                break
+            chunk = request.stream.read(STREAM_CHUNK_SIZE)
+            if not chunk:
+                break
+            t['queue'].put(chunk)
+    except Exception as e:
+        t['error'] = str(e)
+    finally:
+        try:
+            t['queue'].put(None, timeout=1)
+        except Exception:
+            pass
+    return jsonify({'success': True})
+
+@app.route('/stream/init_to_client', methods=['POST'])
+def stream_init_to_client():
+    _cleanup_transfers()
+    if not STREAMING_ENABLED:
+        return jsonify({'streaming': False}), 200
+    data = request.get_json(silent=True) or request.form or {}
+    client_id = data.get('client_id')
+    target_dir = data.get('target_dir')
+    filename = data.get('filename')
+    web_sid = data.get('web_sid')
+    if not client_id or not target_dir or not filename:
+        return jsonify({'error': 'Missing client_id or target_dir or filename'}), 400
+    if not web_sid:
+        return jsonify({'error': 'Missing web_sid'}), 400
+    if client_id not in clients:
+        return jsonify({'error': 'Client not found'}), 404
+    if not clients.get(client_id, {}).get('caps', {}).get('streaming'):
+        return jsonify({'streaming': False}), 200
+
+    t = _new_transfer('web_to_client', web_sid, client_id, filename, target_dir=target_dir)
+    download_url = f"{request.host_url.rstrip('/')}/stream/to_client/{t['transfer_id']}?key={t['access_key']}"
+    upload_url = f"/stream/from_web/{t['transfer_id']}?key={t['access_key']}&filename={quote(filename)}"
+
+    socketio.emit('file_transfer_started', {
+        'transfer_id': t['transfer_id'],
+        'filename': filename,
+        'direction': 'web_to_client',
+        'mode': 'stream'
+    }, room=web_sid)
+
+    socketio.emit('start_stream_download', {
+        'transfer_id': t['transfer_id'],
+        'filename': filename,
+        'target_dir': target_dir,
+        'download_url': download_url
+    }, room=client_id)
+
+    return jsonify({'streaming': True, 'transfer_id': t['transfer_id'], 'upload_url': upload_url})
+
 # 使用循环简化路由注册，但需要注意闭包参数捕获以及验证
 def _create_event_handler(evt):
     def _handle_event(data):
@@ -339,19 +574,101 @@ def handle_command_result(data):
         data['client_id'] = request.sid
     socketio.emit('command_result', data)
 
+@socketio.on('client_capabilities')
+def handle_client_capabilities(data):
+    client_id = request.sid
+    if client_id in clients:
+        clients[client_id]['caps'] = data or {}
+
 @socketio.on('request_download')
 def handle_request_download(data):
     client_id = data.get('client_id')
     if client_id in clients:
-        socketio.emit('upload_file_to_server', data, room=client_id)
+        filename = data.get('filename')
+        path = data.get('path')
+        if STREAMING_ENABLED and clients.get(client_id, {}).get('caps', {}).get('streaming'):
+            _cleanup_transfers()
+            t = _new_transfer('client_to_web', request.sid, client_id, filename, path=path)
+            stream_url = f"/stream/download/{t['transfer_id']}?key={t['access_key']}&filename={quote(filename or '')}"
+            upload_url = f"{request.host_url.rstrip('/')}/stream/upload_from_client/{t['transfer_id']}?key={t['access_key']}"
+            socketio.emit('file_transfer_started', {
+                'transfer_id': t['transfer_id'],
+                'filename': filename,
+                'direction': 'client_to_web',
+                'mode': 'stream',
+                'stream_url': stream_url
+            }, room=request.sid)
+            socketio.emit('start_stream_upload', {
+                'transfer_id': t['transfer_id'],
+                'path': path,
+                'filename': filename,
+                'upload_url': upload_url
+            }, room=client_id)
+        else:
+            transfer_id = uuid.uuid4().hex
+            transfers[transfer_id] = {
+                'web_sid': request.sid,
+                'client_id': client_id,
+                'filename': filename,
+                'created_at': _now_ts()
+            }
+            socketio.emit('file_transfer_started', {
+                'transfer_id': transfer_id,
+                'filename': filename,
+                'direction': 'client_to_web',
+                'mode': 'legacy'
+            }, room=request.sid)
+            socketio.emit('upload_file_to_server', {
+                'path': path,
+                'filename': filename,
+                'transfer_id': transfer_id
+            }, room=client_id)
 
 @socketio.on('client_upload_error')
 def handle_client_upload_error(data):
-    socketio.emit('file_download_ready', {'error': data.get('error')})
+    transfer_id = data.get('transfer_id')
+    payload = {'error': data.get('error'), 'transfer_id': transfer_id}
+    if transfer_id and transfer_id in transfers and transfers[transfer_id].get('web_sid'):
+        t = transfers[transfer_id]
+        socketio.emit('file_download_ready', payload, room=t['web_sid'])
+        if 'queue' in t:
+            t['error'] = data.get('error')
+            t['closed'] = True
+            try:
+                t['queue'].put(None, timeout=1)
+            except Exception:
+                pass
+        else:
+            del transfers[transfer_id]
+    else:
+        socketio.emit('file_download_ready', payload)
 
 @socketio.on('client_download_complete')
 def handle_client_download_complete(data):
-    socketio.emit('client_upload_complete', data)
+    transfer_id = data.get('transfer_id')
+    if transfer_id and transfer_id in transfers and transfers[transfer_id].get('web_sid'):
+        t = transfers[transfer_id]
+        socketio.emit('client_upload_complete', data, room=t['web_sid'])
+        if 'queue' in t:
+            t['closed'] = True
+            try:
+                t['queue'].put(None, timeout=1)
+            except Exception:
+                pass
+        else:
+            del transfers[transfer_id]
+    else:
+        socketio.emit('client_upload_complete', data)
+
+@socketio.on('file_transfer_progress')
+def handle_file_transfer_progress(data):
+    if 'client_id' not in data:
+        data['client_id'] = request.sid
+    transfer_id = data.get('transfer_id')
+    if transfer_id and transfer_id in transfers and transfers[transfer_id].get('web_sid'):
+        socketio.emit('file_transfer_progress', data, room=transfers[transfer_id]['web_sid'])
+    else:
+        socketio.emit('file_transfer_progress', data)
 
 @socketio.on('vnc_frame')
 def handle_vnc_frame(data):
@@ -388,7 +705,8 @@ def handle_connect(auth=None):
     # 只有包含'RemoteClient'或旧版'CameraClient'标识的连接才被视为被控端客户端
     if 'RemoteClient' in user_agent or 'CameraClient' in user_agent:
         clients[client_id] = {
-            'connected_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            'connected_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'caps': {}
         }
         join_room(CLIENT_ROOM)
         print(f"Remote client connected: {client_id}")
