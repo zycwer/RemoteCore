@@ -41,6 +41,7 @@ app.config['MAX_CONTENT_LENGTH'] = 1024 * 1024 * 1024
 
 # 客户端状态管理
 clients = {}
+transfers = {}
 
 @app.before_request
 def require_auth():
@@ -216,6 +217,8 @@ def upload_to_client():
     file = request.files['file']
     client_id = request.form.get('client_id')
     target_dir = request.form.get('target_dir')
+    transfer_id = request.form.get('transfer_id') or uuid.uuid4().hex
+    web_sid = request.form.get('web_sid')
     
     if not client_id or not target_dir:
         return jsonify({'error': 'Missing client_id or target_dir'}), 400
@@ -239,13 +242,21 @@ def upload_to_client():
     
     # 获取下载 URL (让客户端下载)
     download_url = f"{request.host_url.rstrip('/')}/download_from_server/uploads/{safe_filename}"
+
+    if web_sid:
+        transfers[transfer_id] = {
+            'web_sid': web_sid,
+            'client_id': client_id,
+            'filename': file.filename
+        }
     
     # 通知客户端下载该文件
     # file.filename 作为显示用的原始名，需前端进行 HTML 转义
     socketio.emit('download_file', {
         'url': download_url,
         'target_dir': target_dir,
-        'filename': file.filename
+        'filename': file.filename,
+        'transfer_id': transfer_id
     }, room=client_id)
     
     return jsonify({'success': True, 'message': 'File uploaded to server, notifying client'})
@@ -258,6 +269,7 @@ def client_upload_file():
         
     file = request.files['file']
     original_filename = request.form.get('filename', file.filename)
+    transfer_id = request.form.get('transfer_id')
     
     safe_filename = secure_filename(original_filename)
     if not safe_filename:
@@ -276,10 +288,12 @@ def client_upload_file():
     
     # 通知网页端文件已准备好下载
     download_url = f"/download_from_server/downloads/{save_filename}"
-    socketio.emit('file_download_ready', {
-        'url': download_url,
-        'filename': original_filename
-    })
+    payload = {'url': download_url, 'filename': original_filename, 'transfer_id': transfer_id}
+    if transfer_id and transfer_id in transfers and transfers[transfer_id].get('web_sid'):
+        socketio.emit('file_download_ready', payload, room=transfers[transfer_id]['web_sid'])
+        del transfers[transfer_id]
+    else:
+        socketio.emit('file_download_ready', payload)
     
     return jsonify({'success': True})
 
@@ -343,15 +357,51 @@ def handle_command_result(data):
 def handle_request_download(data):
     client_id = data.get('client_id')
     if client_id in clients:
-        socketio.emit('upload_file_to_server', data, room=client_id)
+        transfer_id = uuid.uuid4().hex
+        transfers[transfer_id] = {
+            'web_sid': request.sid,
+            'client_id': client_id,
+            'filename': data.get('filename')
+        }
+        socketio.emit('file_transfer_started', {
+            'transfer_id': transfer_id,
+            'filename': data.get('filename'),
+            'direction': 'client_to_web'
+        }, room=request.sid)
+        socketio.emit('upload_file_to_server', {
+            'path': data.get('path'),
+            'filename': data.get('filename'),
+            'transfer_id': transfer_id
+        }, room=client_id)
 
 @socketio.on('client_upload_error')
 def handle_client_upload_error(data):
-    socketio.emit('file_download_ready', {'error': data.get('error')})
+    transfer_id = data.get('transfer_id')
+    payload = {'error': data.get('error'), 'transfer_id': transfer_id}
+    if transfer_id and transfer_id in transfers and transfers[transfer_id].get('web_sid'):
+        socketio.emit('file_download_ready', payload, room=transfers[transfer_id]['web_sid'])
+        del transfers[transfer_id]
+    else:
+        socketio.emit('file_download_ready', payload)
 
 @socketio.on('client_download_complete')
 def handle_client_download_complete(data):
-    socketio.emit('client_upload_complete', data)
+    transfer_id = data.get('transfer_id')
+    if transfer_id and transfer_id in transfers and transfers[transfer_id].get('web_sid'):
+        socketio.emit('client_upload_complete', data, room=transfers[transfer_id]['web_sid'])
+        del transfers[transfer_id]
+    else:
+        socketio.emit('client_upload_complete', data)
+
+@socketio.on('file_transfer_progress')
+def handle_file_transfer_progress(data):
+    if 'client_id' not in data:
+        data['client_id'] = request.sid
+    transfer_id = data.get('transfer_id')
+    if transfer_id and transfer_id in transfers and transfers[transfer_id].get('web_sid'):
+        socketio.emit('file_transfer_progress', data, room=transfers[transfer_id]['web_sid'])
+    else:
+        socketio.emit('file_transfer_progress', data)
 
 @socketio.on('vnc_frame')
 def handle_vnc_frame(data):
