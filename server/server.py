@@ -55,6 +55,12 @@ STREAM_TRANSFER_TTL_SECONDS = 30 * 60
 clients = {}
 transfers = {}
 
+def _build_content_disposition(filename: str):
+    name = (filename or '').replace('\r', '').replace('\n', '')
+    fallback = secure_filename(name) or 'download.bin'
+    encoded = quote(name, safe='')
+    return f'attachment; filename="{fallback}"; filename*=UTF-8\'\'{encoded}'
+
 def _now_ts():
     return time.time()
 
@@ -348,7 +354,8 @@ def client_upload_file():
     file.save(file_path)
     
     # 通知网页端文件已准备好下载
-    download_url = f"/download_from_server/downloads/{save_filename}"
+    download_name = quote(original_filename or '', safe='')
+    download_url = f"download_from_server/downloads/{save_filename}?download_name={download_name}"
     payload = {'url': download_url, 'filename': original_filename, 'transfer_id': transfer_id}
     if transfer_id and transfer_id in transfers and transfers[transfer_id].get('web_sid'):
         socketio.emit('file_download_ready', payload, room=transfers[transfer_id]['web_sid'])
@@ -376,15 +383,17 @@ def download_from_server(folder, filename):
     if not os.path.isfile(file_path):
         return jsonify({'error': 'File not found'}), 404
         
-    # Send original filename for downloads
-    original_name = safe_filename
+    download_name = request.args.get('download_name')
+    original_name = download_name or safe_filename
     if folder == 'downloads' and '_' in safe_filename:
         # Try to extract original name from timestamp_uuid_name format
         parts = safe_filename.split('_', 2)
         if len(parts) >= 3:
-            original_name = parts[2]
-            
-    return send_from_directory(dir_path, safe_filename, as_attachment=True, download_name=original_name)
+            original_name = download_name or parts[2]
+
+    resp = send_from_directory(dir_path, safe_filename, as_attachment=True)
+    resp.headers['Content-Disposition'] = _build_content_disposition(original_name)
+    return resp
 
 @app.route('/stream/download/<transfer_id>')
 def stream_download_to_web(transfer_id):
@@ -419,7 +428,7 @@ def stream_download_to_web(transfer_id):
             t['closed'] = True
 
     resp = Response(gen(), mimetype='application/octet-stream')
-    resp.headers['Content-Disposition'] = f'attachment; filename="{safe_filename}"'
+    resp.headers['Content-Disposition'] = _build_content_disposition(filename)
     return resp
 
 @app.route('/stream/upload_from_client/<transfer_id>', methods=['POST'])
@@ -532,7 +541,7 @@ def stream_init_to_client():
 
     t = _new_transfer('web_to_client', web_sid, client_id, filename, target_dir=target_dir)
     download_url = f"{request.host_url.rstrip('/')}/stream/to_client/{t['transfer_id']}?key={t['access_key']}"
-    upload_url = f"/stream/from_web/{t['transfer_id']}?key={t['access_key']}&filename={quote(filename)}"
+    upload_url = f"stream/from_web/{t['transfer_id']}?key={t['access_key']}&filename={quote(filename, safe='')}"
 
     socketio.emit('file_transfer_started', {
         'transfer_id': t['transfer_id'],
@@ -578,6 +587,12 @@ def handle_command_result(data):
         data['client_id'] = request.sid
     socketio.emit('command_result', data)
 
+@socketio.on('action_error')
+def handle_action_error(data):
+    if 'client_id' not in data:
+        data['client_id'] = request.sid
+    socketio.emit('action_error', data)
+
 @socketio.on('client_capabilities')
 def handle_client_capabilities(data):
     client_id = request.sid
@@ -593,7 +608,7 @@ def handle_request_download(data):
         if STREAMING_ENABLED and clients.get(client_id, {}).get('caps', {}).get('streaming'):
             _cleanup_transfers()
             t = _new_transfer('client_to_web', request.sid, client_id, filename, path=path)
-            stream_url = f"/stream/download/{t['transfer_id']}?key={t['access_key']}&filename={quote(filename or '')}"
+            stream_url = f"stream/download/{t['transfer_id']}?key={t['access_key']}&filename={quote(filename or '', safe='')}"
             upload_url = f"{request.host_url.rstrip('/')}/stream/upload_from_client/{t['transfer_id']}?key={t['access_key']}"
             socketio.emit('file_transfer_started', {
                 'transfer_id': t['transfer_id'],
