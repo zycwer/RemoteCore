@@ -294,7 +294,7 @@ namespace RemoteCore
                 builder = (ICaptureGraphBuilder2)new CaptureGraphBuilder2();
                 builder.SetFiltergraph(graph);
 
-                graph.AddSourceFilterForMoniker(devices[0].Mon, null, devices[0].Name, out source);
+                ((IFilterGraph2)graph).AddSourceFilterForMoniker(devices[0].Mon, null, devices[0].Name, out source);
 
                 sampleGrabber = (ISampleGrabber)new SampleGrabber();
                 sampleGrabber.SetMediaType(mt);
