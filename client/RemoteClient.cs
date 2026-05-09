@@ -109,8 +109,9 @@ namespace RemoteCore
                 {
                     await _socket.EmitAsync("client_capabilities", new { streaming = true });
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Console.WriteLine($"Failed to emit capabilities: {ex.Message}");
                 }
             };
             _socket.OnDisconnected += (sender, e) => Console.WriteLine("Disconnected from server");
@@ -236,8 +237,9 @@ namespace RemoteCore
                 var devices = DsDevice.GetDevicesOfCat(FilterCategory.VideoInputDevice);
                 return devices != null && devices.Length > 0;
             }
-            catch
+            catch (Exception ex)
             {
+                Console.WriteLine($"Failed to check camera devices: {ex.Message}");
                 return false;
             }
         }
@@ -608,8 +610,9 @@ namespace RemoteCore
                 var principal = new System.Security.Principal.WindowsPrincipal(identity);
                 return principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
             }
-            catch
+            catch (Exception ex)
             {
+                Console.WriteLine($"Failed to check admin status: {ex.Message}");
                 return false;
             }
         }

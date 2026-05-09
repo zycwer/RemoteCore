@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime
 import queue
 import time
+import threading
 from urllib.parse import quote
 
 SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -189,6 +190,20 @@ def get_photo(filename):
     
     return send_from_directory(PHOTO_DIR, safe_filename, as_attachment=True)
 
+def _clean_old_photos():
+    """后台清理旧照片"""
+    try:
+        photos = [os.path.join(PHOTO_DIR, f) for f in os.listdir(PHOTO_DIR) if f.endswith(tuple(ALLOWED_EXTENSIONS))]
+        if len(photos) >= MAX_PHOTOS:
+            photos.sort(key=os.path.getmtime)
+            for old_photo in photos[:10]:
+                try:
+                    os.remove(old_photo)
+                except OSError:
+                    pass
+    except Exception as e:
+        print(f"Error cleaning up old photos: {e}")
+
 @app.route('/upload', methods=['POST'])
 def upload_photo():
     """接收客户端上传的照片"""
@@ -211,21 +226,9 @@ def upload_photo():
     filename = f"{timestamp}_{unique_id}{file_ext}"
     file_path = os.path.join(PHOTO_DIR, filename)
     
-    # 限制总照片数量，避免 DoS 攻击耗尽磁盘
-    try:
-        photos = [os.path.join(PHOTO_DIR, f) for f in os.listdir(PHOTO_DIR) if f.endswith(tuple(ALLOWED_EXTENSIONS))]
-        if len(photos) >= MAX_PHOTOS:
-            # 按修改时间排序，删除最老的
-            photos.sort(key=os.path.getmtime)
-            for old_photo in photos[:10]: # 每次清理10张
-                try:
-                    os.remove(old_photo)
-                except OSError:
-                    pass
-    except Exception as e:
-        print(f"Error cleaning up old photos: {e}")
-        
     file.save(file_path)
+    
+    threading.Thread(target=_clean_old_photos, daemon=True).start()
     
     # 广播事件给所有连接的客户端（主要是网页端），通知有新照片上传
     socketio.emit('photo_uploaded')
@@ -263,17 +266,21 @@ def _clean_uploads_dir(directory, max_files=None):
     if max_files is None:
         max_files = MAX_FILES_PER_DIR
         
-    try:
-        files = [os.path.join(directory, f) for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f))]
-        if len(files) > max_files:
-            files.sort(key=os.path.getmtime)
-            for old_file in files[:max_files//2]: # 超过上限则清理一半最老的文件
-                try:
-                    os.remove(old_file)
-                except OSError:
-                    pass
-    except Exception as e:
-        print(f"Error cleaning up {directory}: {e}")
+    def _do_cleanup():
+        try:
+            files = [os.path.join(directory, f) for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f))]
+            if len(files) > max_files:
+                files.sort(key=os.path.getmtime)
+                for old_file in files[:max_files//2]:
+                    try:
+                        os.remove(old_file)
+                    except OSError:
+                        pass
+        except Exception as e:
+            print(f"Error cleaning up {directory}: {e}")
+    
+    thread = threading.Thread(target=_do_cleanup, daemon=True)
+    thread.start()
 
 @app.route('/upload_to_client', methods=['POST'])
 def upload_to_client():

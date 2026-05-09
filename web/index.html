@@ -1229,21 +1229,21 @@
 
         socket.on('client_connected', function(data) {
             if (!onlineClients.includes(data.client_id)) {
-                onlineClients.push(data.client_id);
+                onlineClients.push(escapeHtml(data.client_id || ''));
                 updateClientsList();
             }
         });
 
         socket.on('client_disconnected', function(data) {
-            onlineClients = onlineClients.filter(id => id !== data.client_id);
+            onlineClients = onlineClients.filter(id => id !== escapeHtml(data.client_id || ''));
             updateClientsList();
         });
 
         socket.on('file_transfer_started', function(data) {
             if (!data || !data.transfer_id) return;
-            activeTransferId = data.transfer_id;
+            activeTransferId = escapeHtml(data.transfer_id || '');
             activeTransferStage = null;
-            const name = data.filename || '';
+            const name = escapeHtml(data.filename || '');
             showFileTransfer(name ? `传输中：${name}` : '文件传输中');
             fileTransferPercent.textContent = '0%';
             fileTransferBar.style.width = '0%';
@@ -1251,7 +1251,7 @@
             if (data.mode === 'stream' && data.direction === 'client_to_web' && data.stream_url) {
                 const a = document.createElement('a');
                 a.href = data.stream_url;
-                if (data.filename) a.download = data.filename;
+                if (data.filename) a.download = escapeHtml(data.filename);
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
@@ -1261,10 +1261,10 @@
         socket.on('file_transfer_progress', function(data) {
             if (!data || !data.transfer_id) return;
             if (activeTransferId && data.transfer_id !== activeTransferId) return;
-            activeTransferId = data.transfer_id;
+            activeTransferId = escapeHtml(data.transfer_id || '');
             if (data.stage && data.stage !== activeTransferStage) {
-                activeTransferStage = data.stage;
-                const name = data.filename || '';
+                activeTransferStage = escapeHtml(data.stage || '');
+                const name = escapeHtml(data.filename || '');
                 const stageText = data.stage === 'upload_to_server'
                     ? '上传到服务器'
                     : (data.stage === 'download_from_server' ? '客户端下载中' : '传输中');
@@ -1299,8 +1299,8 @@
 
         socket.on('action_error', function(data) {
             if (!data) return;
-            const clientId = data.client_id;
-            const action = data.action;
+            const clientId = escapeHtml(data.client_id || '');
+            const action = escapeHtml(data.action || '');
             if (action === 'shoot' && executingClients.shoot && clientId && executingClients.shoot !== clientId) return;
             if (action === 'screenshot' && executingClients.screenshot && clientId && executingClients.screenshot !== clientId) return;
 
@@ -1319,7 +1319,7 @@
             screenshotBtn.disabled = false;
             screenshotBtn.innerHTML = '🖥️ 抓取屏幕';
 
-            showMessage(controlMessage, `${action === 'shoot' ? '拍摄' : '抓取'}失败: ${data.error || '未知错误'}`, 'error');
+            showMessage(controlMessage, `${action === 'shoot' ? '拍摄' : '抓取'}失败: ${escapeHtml(data.error || '未知错误')}`, 'error');
         });
 
         socket.on('command_result', function(data) {
@@ -1327,20 +1327,20 @@
             const executeBtn = document.getElementById('executeBtn');
             
             executingClients.execute = null;
-            if (targetClient.value === data.client_id || data.client_id === undefined) {
+            if (targetClient.value === escapeHtml(data.client_id || '') || data.client_id === undefined) {
                 executeBtn.disabled = false;
                 executeBtn.innerHTML = '执行';
             }
             
-            let outputText = data.output || '';
+            let outputText = escapeHtml(data.output || '');
             let isError = false;
             if (data.error) {
-                outputText = data.error;
+                outputText = escapeHtml(data.error);
                 isError = true;
             }
             
             const cmdLine = document.createElement('div');
-            cmdLine.textContent = '> ' + data.command;
+            cmdLine.textContent = '> ' + (data.command || '');
             
             const outLine = document.createElement('div');
             outLine.textContent = outputText;
@@ -1363,14 +1363,14 @@
             listDirBtn.innerHTML = '📂 列出目录';
             
             if (data.error) {
-                showMessage(fileMessage, '目录读取失败: ' + data.error, 'error');
+                showMessage(fileMessage, '目录读取失败: ' + escapeHtml(data.error || ''), 'error');
                 fileListBody.innerHTML = `
                     <tr>
                         <td colspan="5">
                             <div class="empty-state">
                                 <div class="empty-icon">❌</div>
                                 <div class="empty-title">读取失败</div>
-                                <div class="empty-desc">${escapeHtml(data.error)}</div>
+                                <div class="empty-desc">${escapeHtml(data.error || '')}</div>
                             </div>
                         </td>
                     </tr>
@@ -1444,7 +1444,7 @@
             const fileMessage = document.getElementById('fileMessage');
             
             if (data.error) {
-                showMessage(fileMessage, '下载失败: ' + data.error, 'error');
+                showMessage(fileMessage, '下载失败: ' + escapeHtml(data.error || ''), 'error');
                 hideFileTransfer();
                 return;
             }
@@ -1452,7 +1452,7 @@
             showMessage(fileMessage, '文件准备就绪，开始下载...', 'success');
             const a = document.createElement('a');
             a.href = new URL(data.url, window.location.href).toString();
-            a.download = data.filename;
+            a.download = escapeHtml(data.filename || '');
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -1465,10 +1465,9 @@
             const fileUploadInput = document.getElementById('fileUploadInput');
             
             if (data.error) {
-                showMessage(fileMessage, '客户端接收文件失败: ' + data.error, 'error');
+                showMessage(fileMessage, '客户端接收文件失败: ' + escapeHtml(data.error || ''), 'error');
             } else {
                 showMessage(fileMessage, '客户端已成功接收文件！', 'success');
-                // Refresh directory
                 if (currentPath) {
                     listDir(currentPath);
                 }
