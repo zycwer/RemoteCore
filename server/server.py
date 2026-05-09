@@ -9,6 +9,13 @@ import time
 import threading
 from urllib.parse import quote
 
+# 尝试加载 .env 文件
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.abspath(os.path.join(SERVER_DIR, os.pardir))
 WEB_DIR = os.path.join(ROOT_DIR, 'web')
@@ -24,7 +31,7 @@ DOWNLOADS_DIR = os.path.join(STORAGE_DIR, 'downloads')
 UPLOADS_DIR = os.path.join(STORAGE_DIR, 'uploads')
 CLIENT_ROOM = 'clients'
 SERVER_HOST = '0.0.0.0'
-SERVER_PORT = 5000
+SERVER_PORT = int(os.environ.get('SERVER_PORT', 5000))
 
 # 安全配置
 AUTH_TOKEN = os.environ.get('AUTH_TOKEN')
