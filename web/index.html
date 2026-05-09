@@ -1228,14 +1228,16 @@
         });
 
         socket.on('client_connected', function(data) {
-            if (!onlineClients.includes(data.client_id)) {
-                onlineClients.push(escapeHtml(data.client_id || ''));
+            const clientId = data.client_id || '';
+            if (!onlineClients.includes(clientId)) {
+                onlineClients.push(clientId);
                 updateClientsList();
             }
         });
 
         socket.on('client_disconnected', function(data) {
-            onlineClients = onlineClients.filter(id => id !== escapeHtml(data.client_id || ''));
+            const clientId = data.client_id || '';
+            onlineClients = onlineClients.filter(id => id !== clientId);
             updateClientsList();
         });
 
@@ -1327,7 +1329,7 @@
             const executeBtn = document.getElementById('executeBtn');
             
             executingClients.execute = null;
-            if (targetClient.value === escapeHtml(data.client_id || '') || data.client_id === undefined) {
+            if (targetClient.value === (data.client_id || '') || data.client_id === undefined) {
                 executeBtn.disabled = false;
                 executeBtn.innerHTML = '执行';
             }

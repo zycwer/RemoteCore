@@ -9,6 +9,13 @@ import time
 import threading
 from urllib.parse import quote
 
+# 尝试加载 .env 文件
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 SERVER_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.abspath(os.path.join(SERVER_DIR, os.pardir))
 WEB_DIR = os.path.join(ROOT_DIR, 'web')
@@ -24,7 +31,7 @@ DOWNLOADS_DIR = os.path.join(STORAGE_DIR, 'downloads')
 UPLOADS_DIR = os.path.join(STORAGE_DIR, 'uploads')
 CLIENT_ROOM = 'clients'
 SERVER_HOST = '0.0.0.0'
-SERVER_PORT = 5000
+SERVER_PORT = int(os.environ.get('SERVER_PORT', 5000))
 
 # 安全配置
 AUTH_TOKEN = os.environ.get('AUTH_TOKEN')
@@ -69,8 +76,6 @@ def _cleanup_transfers():
     now = _now_ts()
     expired = []
     for tid, t in transfers.items():
-        if 'queue' not in t:
-            continue
         created_at = t.get('created_at') or 0
         if t.get('closed') or (now - created_at) > STREAM_TRANSFER_TTL_SECONDS:
             expired.append(tid)
@@ -296,6 +301,9 @@ def upload_to_client():
     
     if not client_id or not target_dir:
         return jsonify({'error': 'Missing client_id or target_dir'}), 400
+    
+    if client_id not in clients:
+        return jsonify({'error': 'Client not found'}), 404
         
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400

@@ -421,26 +421,27 @@ namespace RemoteCore
         {
             _isRunning = true;
             
-            // 初始化摄像头
             InitializeCamera();
             
-            // 启动保活线程
             _ = KeepAliveAsync();
-            
-            try
-            {
-                Console.WriteLine("Attempting to connect to server...");
-                await _socket.ConnectAsync();
-                Console.WriteLine("Connected to server successfully");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Connection error: {ex.Message}");
-            }
             
             while (_isRunning)
             {
-                await Task.Delay(1000);
+                try
+                {
+                    if (!_socket.Connected)
+                    {
+                        Console.WriteLine("Attempting to connect to server...");
+                        await _socket.ConnectAsync();
+                        Console.WriteLine("Connected to server successfully");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Connection error: {ex.Message}");
+                }
+                
+                await Task.Delay(ReconnectInterval * 1000);
             }
         }
 
@@ -734,7 +735,7 @@ namespace RemoteCore
                 long lastReportTick = 0;
 
                 var fileStream = File.OpenRead(path);
-                var content = new ProgressStreamContent(
+                using var content = new ProgressStreamContent(
                     fileStream,
                     totalBytes,
                     FileTransferBufferSize,
