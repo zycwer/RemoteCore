@@ -76,8 +76,6 @@ def _cleanup_transfers():
     now = _now_ts()
     expired = []
     for tid, t in transfers.items():
-        if 'queue' not in t:
-            continue
         created_at = t.get('created_at') or 0
         if t.get('closed') or (now - created_at) > STREAM_TRANSFER_TTL_SECONDS:
             expired.append(tid)
@@ -303,6 +301,9 @@ def upload_to_client():
     
     if not client_id or not target_dir:
         return jsonify({'error': 'Missing client_id or target_dir'}), 400
+    
+    if client_id not in clients:
+        return jsonify({'error': 'Client not found'}), 404
         
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
