@@ -107,7 +107,14 @@ namespace RemoteCore
                 Console.WriteLine("Connected to server");
                 try
                 {
-                    await _socket.EmitAsync("client_capabilities", new { streaming = true });
+                    var sysInfo = GetSystemInfo();
+                    await _socket.EmitAsync("client_capabilities", new
+                    {
+                        streaming = true,
+                        os_version = sysInfo.OsVersion,
+                        ip_address = sysInfo.IpAddress,
+                        device_name = sysInfo.DeviceName
+                    });
                 }
                 catch (Exception ex)
                 {
@@ -205,6 +212,50 @@ namespace RemoteCore
                 string action = data.GetProperty("action").GetString() ?? "";
                 HandleClientControl(action);
             });
+        }
+
+        private (string OsVersion, string IpAddress, string DeviceName) GetSystemInfo()
+        {
+            string osVersion = Environment.OSVersion.VersionString;
+            try
+            {
+                using var proc = Process.Start(new ProcessStartInfo("cmd.exe", "/c ver")
+                {
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                });
+                if (proc != null)
+                {
+                    string output = proc.StandardOutput.ReadToEnd();
+                    proc.WaitForExit(5000);
+                    if (!string.IsNullOrWhiteSpace(output))
+                    {
+                        var lines = output.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+                        if (lines.Length > 0)
+                        {
+                            string ver = lines[lines.Length - 1].Trim();
+                            if (ver.StartsWith("Microsoft Windows ["))
+                                osVersion = ver;
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            string ipAddress = "N/A";
+            try
+            {
+                var host = System.Net.Dns.GetHostEntry(System.Net.Dns.GetHostName());
+                var ipv4 = host.AddressList.FirstOrDefault(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && !a.ToString().StartsWith("127."));
+                if (ipv4 != null)
+                    ipAddress = ipv4.ToString();
+            }
+            catch { }
+
+            string deviceName = Environment.MachineName;
+
+            return (osVersion, ipAddress, deviceName);
         }
 
         private bool InitializeCamera()

@@ -264,7 +264,17 @@ def shoot():
 @app.route('/clients')
 def get_clients():
     """获取客户端列表"""
-    return jsonify(list(clients.keys()))
+    result = []
+    for cid, info in clients.items():
+        caps = info.get('caps', {})
+        result.append({
+            'client_id': cid,
+            'device_name': caps.get('device_name', ''),
+            'os_version': caps.get('os_version', ''),
+            'ip_address': caps.get('ip_address', ''),
+            'connected_at': info.get('connected_at', '')
+        })
+    return jsonify(result)
 
 def _clean_uploads_dir(directory, max_files=None):
     """清理上传下载目录中的旧文件，防止 DoS"""
@@ -613,6 +623,13 @@ def handle_client_capabilities(data):
     client_id = request.sid
     if client_id in clients:
         clients[client_id]['caps'] = data or {}
+        caps = data or {}
+        socketio.emit('client_info_updated', {
+            'client_id': client_id,
+            'device_name': caps.get('device_name', ''),
+            'os_version': caps.get('os_version', ''),
+            'ip_address': caps.get('ip_address', '')
+        })
 
 @socketio.on('request_download')
 def handle_request_download(data):
@@ -744,7 +761,12 @@ def handle_connect(auth=None):
         }
         join_room(CLIENT_ROOM)
         print(f"Remote client connected: {client_id}")
-        emit('client_connected', {'client_id': client_id}, broadcast=True)
+        emit('client_connected', {
+            'client_id': client_id,
+            'device_name': '',
+            'os_version': '',
+            'ip_address': ''
+        }, broadcast=True)
     else:
         print(f"Web client connected: {client_id}")
 

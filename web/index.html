@@ -1040,23 +1040,35 @@
                 targetClient.innerHTML = '<option value="all">所有客户端</option>';
                 fileTargetClient.innerHTML = '<option value="">选择客户端...</option>';
             } else {
-                clientsGrid.innerHTML = onlineClients.map(clientId => `
+                clientsGrid.innerHTML = onlineClients.map(client => {
+                    const displayName = client.device_name || client.client_id;
+                    const osInfo = client.os_version || '未知系统';
+                    const ipInfo = client.ip_address || 'N/A';
+                    return `
                     <div class="client-card">
                         <div class="client-avatar">🖥️</div>
                         <div class="client-info">
-                            <div class="client-id">${escapeHtml(clientId)}</div>
+                            <div class="client-id">${escapeHtml(displayName)}</div>
+                            <div class="client-detail" style="font-size:12px;color:#888;margin-top:2px;">${escapeHtml(osInfo)}</div>
+                            <div class="client-detail" style="font-size:12px;color:#888;">IP: ${escapeHtml(ipInfo)}</div>
                             <div class="client-status">● 在线</div>
                         </div>
                     </div>
-                `).join('');
+                `}).join('');
                 
                 updateButtonsState(false);
                 
                 const currentValue = targetClient.value;
                 targetClient.innerHTML = '<option value="all">所有客户端</option>' + 
-                    onlineClients.map(clientId => `<option value="${escapeHtml(clientId)}">${escapeHtml(clientId)}</option>`).join('');
+                    onlineClients.map(client => {
+                        const displayName = client.device_name || client.client_id;
+                        return `<option value="${escapeHtml(client.client_id)}">${escapeHtml(displayName)}</option>`;
+                    }).join('');
                 fileTargetClient.innerHTML = '<option value="">选择客户端...</option>' + 
-                    onlineClients.map(clientId => `<option value="${escapeHtml(clientId)}">${escapeHtml(clientId)}</option>`).join('');
+                    onlineClients.map(client => {
+                        const displayName = client.device_name || client.client_id;
+                        return `<option value="${escapeHtml(client.client_id)}">${escapeHtml(displayName)}</option>`;
+                    }).join('');
                 
                 if (currentValue && targetClient.querySelector(`option[value="${currentValue}"]`)) {
                     targetClient.value = currentValue;
@@ -1229,16 +1241,27 @@
 
         socket.on('client_connected', function(data) {
             const clientId = data.client_id || '';
-            if (!onlineClients.includes(clientId)) {
-                onlineClients.push(clientId);
+            if (!onlineClients.some(c => c.client_id === clientId)) {
+                onlineClients.push(data);
                 updateClientsList();
             }
         });
 
         socket.on('client_disconnected', function(data) {
             const clientId = data.client_id || '';
-            onlineClients = onlineClients.filter(id => id !== clientId);
+            onlineClients = onlineClients.filter(c => c.client_id !== clientId);
             updateClientsList();
+        });
+
+        socket.on('client_info_updated', function(data) {
+            const clientId = data.client_id || '';
+            const client = onlineClients.find(c => c.client_id === clientId);
+            if (client) {
+                client.device_name = data.device_name || '';
+                client.os_version = data.os_version || '';
+                client.ip_address = data.ip_address || '';
+                updateClientsList();
+            }
         });
 
         socket.on('file_transfer_started', function(data) {
