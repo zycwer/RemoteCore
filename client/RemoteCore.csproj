@@ -17,6 +17,7 @@
     <DebugSymbols>false</DebugSymbols>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <NoWarn>$(NoWarn);NETSDK1175</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
