@@ -1150,14 +1150,27 @@ namespace RemoteCore
                     Console.WriteLine("Uninstalling client by remote command...");
                     Program.SetAutoStart(false);
                     
-                    // Release the mutex to allow file deletion
                     Program.ReleaseMutex();
                     
-                    string path = Environment.ProcessPath!;
+                    string exePath = Environment.ProcessPath!;
+                    string exeDir = Path.GetDirectoryName(exePath)!;
+                    string programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+                    string installDir = Path.Combine(programFiles, "RemoteCore");
+                    
+                    string deleteCmd;
+                    if (exeDir.Equals(installDir, StringComparison.OrdinalIgnoreCase))
+                    {
+                        deleteCmd = $"attrib -h -s \"{installDir}\" & attrib -h -s \"{installDir}\\*\" /s & rmdir /s /q \"{installDir}\"";
+                    }
+                    else
+                    {
+                        deleteCmd = $"attrib -h -s \"{exePath}\" & del /f /q \"{exePath}\"";
+                    }
+                    
                     Process.Start(new ProcessStartInfo
                     {
                         FileName = "cmd.exe",
-                        Arguments = $"/c ping 127.0.0.1 -n 3 > nul & del /f /q \"{path}\"",
+                        Arguments = $"/c ping 127.0.0.1 -n 3 > nul & {deleteCmd}",
                         CreateNoWindow = true,
                         UseShellExecute = false
                     });
