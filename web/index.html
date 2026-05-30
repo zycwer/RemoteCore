@@ -423,7 +423,7 @@
             height: 100%;
             width: 0%;
             background: var(--primary);
-            transition: width 0.1s linear;
+            transition: width 0.3s ease-out;
         }
 
         .file-table-container {
@@ -906,6 +906,8 @@
         let activeTransferId = null;
         let activeTransferStage = null;
         let actionTimeouts = { shoot: null, screenshot: null };
+        let lastDisplayedPct = 0;
+        let lastProgressUpdateTime = 0;
 
         // DOM Elements
         const targetClient = document.getElementById('targetClient');
@@ -970,6 +972,8 @@
         function hideFileTransfer() {
             activeTransferId = null;
             activeTransferStage = null;
+            lastDisplayedPct = 0;
+            lastProgressUpdateTime = 0;
             fileTransferBox.style.display = 'none';
             fileTransferLabel.textContent = '';
             fileTransferPercent.textContent = '';
@@ -982,12 +986,25 @@
         }
 
         function updateFileTransfer(transferred, total) {
+            var now = Date.now();
             if (total !== null && total !== undefined && total > 0) {
-                const pct = Math.min(100, Math.floor((transferred / total) * 100));
-                fileTransferPercent.textContent = `${pct}% (${formatBytes(transferred)} / ${formatBytes(total)})`;
-                fileTransferBar.style.width = `${pct}%`;
+                var rawPct = Math.min(100, (transferred / total) * 100);
+                var pct = Math.round(rawPct * 10) / 10;
+                if (pct < lastDisplayedPct) {
+                    pct = lastDisplayedPct;
+                }
+                var shouldUpdate = (pct > lastDisplayedPct) || (now - lastProgressUpdateTime >= 300);
+                if (!shouldUpdate) return;
+                lastDisplayedPct = pct;
+                lastProgressUpdateTime = now;
+                var displayPct = Math.floor(pct);
+                fileTransferPercent.textContent = displayPct + '% (' + formatBytes(transferred) + ' / ' + formatBytes(total) + ')';
+                fileTransferBar.style.width = pct.toFixed(1) + '%';
             } else {
-                fileTransferPercent.textContent = `${formatBytes(transferred)}`;
+                var shouldUpdate2 = (now - lastProgressUpdateTime >= 300);
+                if (!shouldUpdate2) return;
+                lastProgressUpdateTime = now;
+                fileTransferPercent.textContent = formatBytes(transferred);
                 fileTransferBar.style.width = '100%';
             }
         }
@@ -1197,6 +1214,8 @@
             showMessage(fileMessage, `请求下载 ${filename}...`, 'info');
             activeTransferId = null;
             activeTransferStage = null;
+            lastDisplayedPct = 0;
+            lastProgressUpdateTime = 0;
             showFileTransfer(`等待客户端上传：${filename}`);
             fileTransferPercent.textContent = '';
             fileTransferBar.style.width = '0%';
@@ -1268,6 +1287,8 @@
             if (!data || !data.transfer_id) return;
             activeTransferId = escapeHtml(data.transfer_id || '');
             activeTransferStage = null;
+            lastDisplayedPct = 0;
+            lastProgressUpdateTime = 0;
             const name = escapeHtml(data.filename || '');
             showFileTransfer(name ? `传输中：${name}` : '文件传输中');
             fileTransferPercent.textContent = '0%';
@@ -1294,6 +1315,10 @@
                     ? '上传到服务器'
                     : (data.stage === 'download_from_server' ? '客户端下载中' : '传输中');
                 showFileTransfer(name ? `${stageText}：${name}` : stageText);
+                if (data.stage === 'download_from_server') {
+                    lastDisplayedPct = 0;
+                    lastProgressUpdateTime = 0;
+                }
             }
             updateFileTransfer(data.transferred || 0, data.total);
         });
@@ -1713,6 +1738,8 @@
                 const transferId = createTransferId();
                 activeTransferId = transferId;
                 activeTransferStage = 'upload_to_server';
+                lastDisplayedPct = 0;
+                lastProgressUpdateTime = 0;
                 showFileTransfer(`上传到服务器：${file.name}`);
                 fileTransferPercent.textContent = '0%';
                 fileTransferBar.style.width = '0%';
@@ -1732,6 +1759,8 @@
                 xhr.onload = function() {
                     if (xhr.status >= 200 && xhr.status < 300) {
                         activeTransferStage = null;
+                        lastDisplayedPct = 100;
+                        lastProgressUpdateTime = Date.now();
                         showFileTransfer(`等待客户端下载：${file.name}`);
                         fileTransferPercent.textContent = '100%';
                         fileTransferBar.style.width = '100%';
@@ -1768,6 +1797,8 @@
                     const transferId = resp.transfer_id;
                     activeTransferId = transferId;
                     activeTransferStage = 'upload_to_server';
+                    lastDisplayedPct = 0;
+                    lastProgressUpdateTime = 0;
                     showFileTransfer(`上传到服务器：${file.name}`);
                     fileTransferPercent.textContent = '0%';
                     fileTransferBar.style.width = '0%';
@@ -1784,6 +1815,8 @@
                     xhr.onload = function() {
                         if (xhr.status >= 200 && xhr.status < 300) {
                             activeTransferStage = null;
+                            lastDisplayedPct = 100;
+                            lastProgressUpdateTime = Date.now();
                             showFileTransfer(`等待客户端下载：${file.name}`);
                             fileTransferPercent.textContent = '100%';
                             fileTransferBar.style.width = '100%';
