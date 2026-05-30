@@ -7,6 +7,8 @@ from datetime import datetime
 import queue
 import time
 import threading
+import json
+import re
 from urllib.parse import quote
 
 # 尝试加载 .env 文件
@@ -62,6 +64,272 @@ STREAM_TRANSFER_TTL_SECONDS = 30 * 60
 # 客户端状态管理
 clients = {}
 transfers = {}
+
+# ── 定时任务系统 ──
+SCHEDULED_TASKS_FILE = os.path.join(STORAGE_DIR, 'scheduled_tasks.json')
+scheduled_tasks = {}
+scheduled_tasks_lock = threading.Lock()
+
+def _cron_match_field(field_expr, value, ranges):
+    if field_expr == '*':
+        return True
+    for part in field_expr.split(','):
+        if '/' in part:
+            base, step = part.split('/', 1)
+            step = int(step)
+            start = ranges[0] if base == '*' else int(base)
+            if value >= start and (value - start) % step == 0:
+                return True
+        elif '-' in part:
+            lo, hi = part.split('-', 1)
+            if int(lo) <= value <= int(hi):
+                return True
+        else:
+            if value == int(part):
+                return True
+    return False
+
+def _cron_should_run(expr, dt=None):
+    if not expr or not expr.strip():
+        return False
+    parts = expr.strip().split()
+    if len(parts) != 5:
+        return False
+    minute_expr, hour_expr, dom_expr, month_expr, dow_expr = parts
+    if dt is None:
+        dt = datetime.now()
+    if not _cron_match_field(minute_expr, dt.minute, (0, 59)):
+        return False
+    if not _cron_match_field(hour_expr, dt.hour, (0, 23)):
+        return False
+    if not _cron_match_field(dom_expr, dt.day, (1, 31)):
+        return False
+    if not _cron_match_field(month_expr, dt.month, (1, 12)):
+        return False
+    dow = dt.isoweekday() % 7
+    if not _cron_match_field(dow_expr, dow, (0, 6)):
+        return False
+    return True
+
+def _cron_next_run(expr, after=None):
+    if not expr or not expr.strip():
+        return None
+    if after is None:
+        after = datetime.now()
+    test = after.replace(second=0, microsecond=0) + timedelta(minutes=1)
+    limit = after + timedelta(days=366)
+    while test < limit:
+        if _cron_should_run(expr, test):
+            return test
+        test += timedelta(minutes=1)
+    return None
+
+def _load_scheduled_tasks():
+    global scheduled_tasks
+    if os.path.isfile(SCHEDULED_TASKS_FILE):
+        try:
+            with open(SCHEDULED_TASKS_FILE, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            with scheduled_tasks_lock:
+                scheduled_tasks = {tid: t for tid, t in data.items()}
+        except Exception as e:
+            print(f"Error loading scheduled tasks: {e}")
+
+def _save_scheduled_tasks():
+    try:
+        with scheduled_tasks_lock:
+            data = dict(scheduled_tasks)
+        with open(SCHEDULED_TASKS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Error saving scheduled tasks: {e}")
+
+def _execute_scheduled_task(task):
+    action = task.get('action')
+    client_id = task.get('client_id', 'all')
+    task_id = task.get('task_id')
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    if action == 'shoot':
+        if client_id == 'all':
+            for cid in list(clients.keys()):
+                socketio.emit('shoot', room=cid)
+        elif client_id in clients:
+            socketio.emit('shoot', room=client_id)
+        else:
+            with scheduled_tasks_lock:
+                if task_id in scheduled_tasks:
+                    scheduled_tasks[task_id]['last_result'] = f'客户端离线 ({now_str})'
+            _save_scheduled_tasks()
+            return
+        with scheduled_tasks_lock:
+            if task_id in scheduled_tasks:
+                scheduled_tasks[task_id]['last_result'] = f'已执行 ({now_str})'
+        _save_scheduled_tasks()
+
+    elif action == 'screenshot':
+        if client_id == 'all':
+            for cid in list(clients.keys()):
+                socketio.emit('take_screenshot', {'client_id': 'all'}, room=cid)
+        elif client_id in clients:
+            socketio.emit('take_screenshot', {'client_id': client_id}, room=client_id)
+        else:
+            with scheduled_tasks_lock:
+                if task_id in scheduled_tasks:
+                    scheduled_tasks[task_id]['last_result'] = f'客户端离线 ({now_str})'
+            _save_scheduled_tasks()
+            return
+        with scheduled_tasks_lock:
+            if task_id in scheduled_tasks:
+                scheduled_tasks[task_id]['last_result'] = f'已执行 ({now_str})'
+        _save_scheduled_tasks()
+
+    elif action == 'execute':
+        command = task.get('command', '')
+        if not command:
+            with scheduled_tasks_lock:
+                if task_id in scheduled_tasks:
+                    scheduled_tasks[task_id]['last_result'] = f'命令为空 ({now_str})'
+            _save_scheduled_tasks()
+            return
+        if client_id == 'all':
+            for cid in list(clients.keys()):
+                socketio.emit('execute_command', {'client_id': 'all', 'command': command}, room=cid)
+        elif client_id in clients:
+            socketio.emit('execute_command', {'client_id': client_id, 'command': command}, room=client_id)
+        else:
+            with scheduled_tasks_lock:
+                if task_id in scheduled_tasks:
+                    scheduled_tasks[task_id]['last_result'] = f'客户端离线 ({now_str})'
+            _save_scheduled_tasks()
+            return
+        with scheduled_tasks_lock:
+            if task_id in scheduled_tasks:
+                scheduled_tasks[task_id]['last_result'] = f'已执行 ({now_str})'
+        _save_scheduled_tasks()
+
+    with scheduled_tasks_lock:
+        if task_id in scheduled_tasks:
+            scheduled_tasks[task_id]['last_run'] = now_str
+    _save_scheduled_tasks()
+
+def _scheduler_loop():
+    last_minute = -1
+    while True:
+        try:
+            now = datetime.now()
+            current_minute = now.minute
+            if current_minute != last_minute:
+                last_minute = current_minute
+                with scheduled_tasks_lock:
+                    tasks_snapshot = list(scheduled_tasks.values())
+                for task in tasks_snapshot:
+                    if not task.get('enabled', True):
+                        continue
+                    if _cron_should_run(task.get('cron', ''), now):
+                        threading.Thread(target=_execute_scheduled_task, args=(task,), daemon=True).start()
+            time.sleep(1)
+        except Exception as e:
+            print(f"Scheduler loop error: {e}")
+            time.sleep(5)
+
+from datetime import timedelta
+
+_load_scheduled_tasks()
+threading.Thread(target=_scheduler_loop, daemon=True).start()
+
+@app.route('/scheduled_tasks', methods=['GET'])
+def get_scheduled_tasks():
+    with scheduled_tasks_lock:
+        result = list(scheduled_tasks.values())
+    return jsonify(result)
+
+@app.route('/scheduled_tasks', methods=['POST'])
+def create_scheduled_task():
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
+    action = data.get('action')
+    cron = (data.get('cron') or '').strip()
+    client_id = data.get('client_id', 'all')
+    command = (data.get('command') or '').strip()
+
+    if not name:
+        return jsonify({'error': '任务名称不能为空'}), 400
+    if action not in ('shoot', 'screenshot', 'execute'):
+        return jsonify({'error': '无效的操作类型'}), 400
+    if not cron or len(cron.split()) != 5:
+        return jsonify({'error': 'Cron 表达式格式错误，需要5个字段'}), 400
+    if action == 'execute' and not command:
+        return jsonify({'error': '执行命令不能为空'}), 400
+
+    task_id = uuid.uuid4().hex[:12]
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    next_run = _cron_next_run(cron)
+    task = {
+        'task_id': task_id,
+        'name': name,
+        'action': action,
+        'cron': cron,
+        'client_id': client_id,
+        'command': command,
+        'enabled': True,
+        'created_at': now_str,
+        'last_run': None,
+        'last_result': None,
+        'next_run': next_run.strftime('%Y-%m-%d %H:%M') if next_run else None,
+    }
+    with scheduled_tasks_lock:
+        scheduled_tasks[task_id] = task
+    _save_scheduled_tasks()
+    return jsonify(task), 201
+
+@app.route('/scheduled_tasks/<task_id>', methods=['PUT'])
+def update_scheduled_task(task_id):
+    with scheduled_tasks_lock:
+        task = scheduled_tasks.get(task_id)
+    if not task:
+        return jsonify({'error': '任务不存在'}), 404
+
+    data = request.get_json(silent=True) or {}
+    with scheduled_tasks_lock:
+        task = scheduled_tasks[task_id]
+        if 'name' in data:
+            task['name'] = data['name'].strip() or task['name']
+        if 'action' in data and data['action'] in ('shoot', 'screenshot', 'execute'):
+            task['action'] = data['action']
+        if 'cron' in data:
+            cron = data['cron'].strip()
+            if len(cron.split()) != 5:
+                return jsonify({'error': 'Cron 表达式格式错误'}), 400
+            task['cron'] = cron
+        if 'client_id' in data:
+            task['client_id'] = data['client_id']
+        if 'command' in data:
+            task['command'] = data['command'].strip()
+        if 'enabled' in data:
+            task['enabled'] = bool(data['enabled'])
+        next_run = _cron_next_run(task['cron'])
+        task['next_run'] = next_run.strftime('%Y-%m-%d %H:%M') if next_run else None
+    _save_scheduled_tasks()
+    return jsonify(task)
+
+@app.route('/scheduled_tasks/<task_id>', methods=['DELETE'])
+def delete_scheduled_task(task_id):
+    with scheduled_tasks_lock:
+        if task_id not in scheduled_tasks:
+            return jsonify({'error': '任务不存在'}), 404
+        del scheduled_tasks[task_id]
+    _save_scheduled_tasks()
+    return jsonify({'success': True})
+
+@app.route('/scheduled_tasks/<task_id>/trigger', methods=['POST'])
+def trigger_scheduled_task(task_id):
+    with scheduled_tasks_lock:
+        task = scheduled_tasks.get(task_id)
+    if not task:
+        return jsonify({'error': '任务不存在'}), 404
+    threading.Thread(target=_execute_scheduled_task, args=(dict(task),), daemon=True).start()
+    return jsonify({'success': True, 'message': '任务已触发'})
 
 def _build_content_disposition(filename: str):
     name = (filename or '').replace('\r', '').replace('\n', '')
