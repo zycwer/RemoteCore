@@ -25,7 +25,7 @@ STORAGE_DIR = os.path.join(SERVER_DIR, 'storage')
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(24).hex())
-socketio = SocketIO(app, cors_allowed_origins=os.environ.get('CORS_ORIGINS', '*').split(','))
+socketio = SocketIO(app, cors_allowed_origins=os.environ.get('CORS_ORIGINS', '*').split(','), async_mode='threading')
 
 # 配置
 PHOTO_DIR = os.path.join(STORAGE_DIR, 'photos')
@@ -701,16 +701,20 @@ def stream_download_to_web(transfer_id):
     t['reader_started'] = True
 
     filename = request.args.get('filename') or t.get('filename') or 'download.bin'
-    safe_filename = secure_filename(filename) or 'download.bin'
 
     def gen():
         try:
+            idle_count = 0
             while True:
                 if t.get('closed'):
                     break
                 try:
                     chunk = t['queue'].get(timeout=1)
+                    idle_count = 0
                 except queue.Empty:
+                    idle_count += 1
+                    if idle_count > 120:
+                        break
                     continue
                 if chunk is None:
                     break
@@ -743,10 +747,11 @@ def stream_upload_from_client(transfer_id):
             chunk = request.stream.read(STREAM_CHUNK_SIZE)
             if not chunk:
                 break
-            t['queue'].put(chunk)
+            t['queue'].put(chunk, timeout=30)
     except Exception as e:
         t['error'] = str(e)
     finally:
+        t['closed'] = True
         try:
             t['queue'].put(None, timeout=1)
         except Exception:
@@ -767,12 +772,17 @@ def stream_download_to_client(transfer_id):
 
     def gen():
         try:
+            idle_count = 0
             while True:
                 if t.get('closed'):
                     break
                 try:
                     chunk = t['queue'].get(timeout=1)
+                    idle_count = 0
                 except queue.Empty:
+                    idle_count += 1
+                    if idle_count > 120:
+                        break
                     continue
                 if chunk is None:
                     break
@@ -803,10 +813,11 @@ def stream_upload_from_web(transfer_id):
             chunk = request.stream.read(STREAM_CHUNK_SIZE)
             if not chunk:
                 break
-            t['queue'].put(chunk)
+            t['queue'].put(chunk, timeout=30)
     except Exception as e:
         t['error'] = str(e)
     finally:
+        t['closed'] = True
         try:
             t['queue'].put(None, timeout=1)
         except Exception:
