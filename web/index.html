@@ -679,99 +679,6 @@
             font-size: 12px;
             font-weight: 600;
         }
-
-        /* Scheduled Task Card */
-        .task-card {
-            padding: 20px;
-            border: 2px solid var(--border);
-            border-radius: var(--radius);
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            transition: var(--transition);
-        }
-
-        .task-card:hover {
-            border-color: var(--primary);
-        }
-
-        .task-card.disabled {
-            opacity: 0.55;
-        }
-
-        .task-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .task-name {
-            font-weight: 600;
-            font-size: 15px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .task-actions {
-            display: flex;
-            gap: 6px;
-        }
-
-        .task-meta {
-            font-size: 13px;
-            color: var(--text-secondary);
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-
-        .task-meta span {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .toggle-switch {
-            position: relative;
-            width: 40px;
-            height: 22px;
-            cursor: pointer;
-        }
-
-        .toggle-switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-
-        .toggle-slider {
-            position: absolute;
-            inset: 0;
-            background: var(--border);
-            border-radius: 22px;
-            transition: var(--transition);
-        }
-
-        .toggle-slider::before {
-            content: '';
-            position: absolute;
-            width: 16px;
-            height: 16px;
-            left: 3px;
-            bottom: 3px;
-            background: white;
-            border-radius: 50%;
-            transition: var(--transition);
-        }
-
-        .toggle-switch input:checked + .toggle-slider {
-            background: var(--primary);
-        }
-
-        .toggle-switch input:checked + .toggle-slider::before {
-            transform: translateX(18px);
-        }
     </style>
 </head>
 <body>
@@ -796,9 +703,6 @@
             </button>
             <button class="tab" data-tab="photos">
                 <span>🖼️</span> 照片截图
-            </button>
-            <button class="tab" data-tab="scheduled">
-                <span>⏰</span> 定时任务
             </button>
             <button class="tab" data-tab="clients">
                 <span>👥</span> 客户端
@@ -945,29 +849,6 @@
             </div>
         </div>
 
-        <!-- Scheduled Tasks Tab -->
-        <div class="tab-content" id="scheduled-tab">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-                <div class="card-title" style="margin-bottom: 0;">
-                    <span>⏰</span> 定时任务
-                    <span id="scheduledCount" class="count-badge" style="margin-left: 8px;">0</span>
-                </div>
-                <button id="addScheduledTaskBtn" class="btn btn-primary">
-                    ➕ 新建任务
-                </button>
-            </div>
-
-            <div id="scheduledTaskList" class="clients-grid">
-                <div style="grid-column: 1 / -1;">
-                    <div class="empty-state">
-                        <div class="empty-icon">⏰</div>
-                        <div class="empty-title">暂无定时任务</div>
-                        <div class="empty-desc">点击"新建任务"创建定时拍照、截图或执行命令的计划</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <!-- Clients Tab -->
         <div class="tab-content" id="clients-tab">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
@@ -1006,51 +887,6 @@
         <div class="vnc-controls">
             <button id="vncFullscreenBtn" class="btn btn-primary btn-sm">🔲 全屏</button>
             <button id="vncRefreshBtn" class="btn btn-secondary btn-sm">🔄 刷新</button>
-        </div>
-    </div>
-
-    <!-- Scheduled Task Modal -->
-    <div class="modal" id="scheduledTaskModal" style="background:rgba(0,0,0,0.5);">
-        <div style="background:var(--card-bg);border-radius:var(--radius);width:90%;max-width:560px;margin:auto;padding:32px;position:relative;top:50%;transform:translateY(-50%);">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
-                <h3 id="scheduledModalTitle" style="margin:0;font-size:18px;font-weight:600;">新建定时任务</h3>
-                <button id="closeScheduledModalBtn" class="btn btn-sm" style="background:var(--light-gray);color:var(--text);">✕</button>
-            </div>
-            <input type="hidden" id="editTaskId" value="">
-            <div style="margin-bottom:16px;">
-                <label style="display:block;font-weight:500;font-size:14px;margin-bottom:6px;">任务名称</label>
-                <input type="text" id="taskNameInput" placeholder="如：每天定时拍照" style="width:100%;">
-            </div>
-            <div style="margin-bottom:16px;">
-                <label style="display:block;font-weight:500;font-size:14px;margin-bottom:6px;">操作类型</label>
-                <select id="taskActionSelect" style="width:100%;">
-                    <option value="shoot">📷 拍摄照片</option>
-                    <option value="screenshot">🖥️ 抓取屏幕</option>
-                    <option value="execute">💻 执行命令</option>
-                </select>
-            </div>
-            <div id="taskCommandGroup" style="margin-bottom:16px;display:none;">
-                <label style="display:block;font-weight:500;font-size:14px;margin-bottom:6px;">执行命令</label>
-                <input type="text" id="taskCommandInput" placeholder="如：ipconfig" style="width:100%;">
-            </div>
-            <div style="margin-bottom:16px;">
-                <label style="display:block;font-weight:500;font-size:14px;margin-bottom:6px;">目标客户端</label>
-                <select id="taskClientSelect" style="width:100%;">
-                    <option value="all">所有客户端</option>
-                </select>
-            </div>
-            <div style="margin-bottom:16px;">
-                <label style="display:block;font-weight:500;font-size:14px;margin-bottom:6px;">Cron 表达式（分 时 日 月 周）</label>
-                <input type="text" id="taskCronInput" placeholder="0 8 * * *  = 每天8:00" style="width:100%;font-family:monospace;">
-                <div style="margin-top:6px;font-size:12px;color:var(--text-secondary);">
-                    常用：每分钟 */1 * * * * ｜ 每小时 0 * * * * ｜ 每天8点 0 8 * * * ｜ 工作日9点 0 9 * * 1-5
-                </div>
-            </div>
-            <div id="scheduledTaskError" style="display:none;margin-bottom:16px;" class="message error"></div>
-            <div style="display:flex;gap:12px;justify-content:flex-end;">
-                <button id="cancelScheduledTaskBtn" class="btn" style="background:var(--light-gray);color:var(--text);">取消</button>
-                <button id="saveScheduledTaskBtn" class="btn btn-primary">保存</button>
-            </div>
         </div>
     </div>
 
@@ -1150,24 +986,23 @@
         }
 
         function updateFileTransfer(transferred, total) {
-            var now = Date.now();
             if (total !== null && total !== undefined && total > 0) {
                 var rawPct = Math.min(100, (transferred / total) * 100);
                 var pct = Math.round(rawPct * 10) / 10;
                 if (pct < lastDisplayedPct) {
                     pct = lastDisplayedPct;
                 }
-                var shouldUpdate = (pct > lastDisplayedPct) || (now - lastProgressUpdateTime >= 300);
-                if (!shouldUpdate) return;
+                var now = Date.now();
+                if (pct <= lastDisplayedPct && now - lastProgressUpdateTime < 200) return;
                 lastDisplayedPct = pct;
                 lastProgressUpdateTime = now;
                 var displayPct = Math.floor(pct);
                 fileTransferPercent.textContent = displayPct + '% (' + formatBytes(transferred) + ' / ' + formatBytes(total) + ')';
                 fileTransferBar.style.width = pct.toFixed(1) + '%';
             } else {
-                var shouldUpdate2 = (now - lastProgressUpdateTime >= 300);
-                if (!shouldUpdate2) return;
-                lastProgressUpdateTime = now;
+                var now2 = Date.now();
+                if (now2 - lastProgressUpdateTime < 200) return;
+                lastProgressUpdateTime = now2;
                 fileTransferPercent.textContent = formatBytes(transferred);
                 fileTransferBar.style.width = '100%';
             }
@@ -1449,14 +1284,17 @@
 
         socket.on('file_transfer_started', function(data) {
             if (!data || !data.transfer_id) return;
-            activeTransferId = escapeHtml(data.transfer_id || '');
-            activeTransferStage = null;
-            lastDisplayedPct = 0;
-            lastProgressUpdateTime = 0;
-            const name = escapeHtml(data.filename || '');
-            showFileTransfer(name ? `传输中：${name}` : '文件传输中');
-            fileTransferPercent.textContent = '0%';
-            fileTransferBar.style.width = '0%';
+            // 上传流程中 activeTransferId 已由 XHR 初始化设置，避免覆盖导致进度重置
+            if (!activeTransferId || data.direction === 'client_to_web') {
+                activeTransferId = escapeHtml(data.transfer_id || '');
+                activeTransferStage = null;
+                lastDisplayedPct = 0;
+                lastProgressUpdateTime = 0;
+                const name = escapeHtml(data.filename || '');
+                showFileTransfer(name ? `传输中：${name}` : '文件传输中');
+                fileTransferPercent.textContent = '0%';
+                fileTransferBar.style.width = '0%';
+            }
 
             if (data.mode === 'stream' && data.direction === 'client_to_web' && data.stream_url) {
                 const a = document.createElement('a');
@@ -2073,254 +1911,6 @@
                 keyCode: e.keyCode
             });
         });
-
-        // ── 定时任务管理 ──
-        const scheduledTaskModal = document.getElementById('scheduledTaskModal');
-        const taskActionSelect = document.getElementById('taskActionSelect');
-        const taskCommandGroup = document.getElementById('taskCommandGroup');
-        const taskClientSelect = document.getElementById('taskClientSelect');
-        const scheduledTaskError = document.getElementById('scheduledTaskError');
-        const editTaskId = document.getElementById('editTaskId');
-
-        function _actionLabel(action) {
-            if (action === 'shoot') return '📷 拍照';
-            if (action === 'screenshot') return '🖥️ 截图';
-            if (action === 'execute') return '💻 执行命令';
-            return action;
-        }
-
-        function _cronHumanize(expr) {
-            if (!expr) return '-';
-            var p = expr.trim().split(/\s+/);
-            if (p.length !== 5) return expr;
-            var m = p[0], h = p[1], dom = p[2], mon = p[3], dow = p[4];
-            if (m === '*/1' && h === '*' && dom === '*' && mon === '*' && dow === '*') return '每分钟';
-            if (m === '0' && h === '*' && dom === '*' && mon === '*' && dow === '*') return '每小时';
-            if (m === '0' && h.match(/^\d+$/) && dom === '*' && mon === '*' && dow === '*') return '每天 ' + h + ':' + m.padStart(2, '0');
-            if (m === '0' && h.match(/^\d+$/) && dom === '*' && mon === '*' && dow === '1-5') return '工作日 ' + h + ':' + m.padStart(2, '0');
-            return expr;
-        }
-
-        function _clientDisplayName(cid) {
-            if (!cid || cid === 'all') return '所有客户端';
-            var c = onlineClients.find(function(cl) { return cl.client_id === cid; });
-            return c ? (c.device_name || cid) : cid;
-        }
-
-        function openScheduledModal(task) {
-            editTaskId.value = task ? task.task_id : '';
-            document.getElementById('scheduledModalTitle').textContent = task ? '编辑定时任务' : '新建定时任务';
-            document.getElementById('taskNameInput').value = task ? task.name : '';
-            taskActionSelect.value = task ? task.action : 'shoot';
-            document.getElementById('taskCronInput').value = task ? task.cron : '';
-            document.getElementById('taskCommandInput').value = task ? (task.command || '') : '';
-            taskCommandGroup.style.display = (taskActionSelect.value === 'execute') ? 'block' : 'none';
-
-            taskClientSelect.innerHTML = '<option value="all">所有客户端</option>';
-            onlineClients.forEach(function(cl) {
-                var dn = cl.device_name || cl.client_id;
-                var opt = document.createElement('option');
-                opt.value = cl.client_id;
-                opt.textContent = dn;
-                taskClientSelect.appendChild(opt);
-            });
-            if (task && task.client_id) {
-                taskClientSelect.value = task.client_id;
-            }
-
-            scheduledTaskError.style.display = 'none';
-            scheduledTaskModal.classList.add('active');
-            document.body.style.overflow = 'hidden';
-        }
-
-        function closeScheduledModal() {
-            scheduledTaskModal.classList.remove('active');
-            document.body.style.overflow = '';
-        }
-
-        taskActionSelect.addEventListener('change', function() {
-            taskCommandGroup.style.display = this.value === 'execute' ? 'block' : 'none';
-        });
-
-        document.getElementById('closeScheduledModalBtn').addEventListener('click', closeScheduledModal);
-        document.getElementById('cancelScheduledTaskBtn').addEventListener('click', closeScheduledModal);
-
-        document.getElementById('addScheduledTaskBtn').addEventListener('click', function() {
-            openScheduledModal(null);
-        });
-
-        document.getElementById('saveScheduledTaskBtn').addEventListener('click', function() {
-            var name = document.getElementById('taskNameInput').value.trim();
-            var action = taskActionSelect.value;
-            var cron = document.getElementById('taskCronInput').value.trim();
-            var clientId = taskClientSelect.value;
-            var command = document.getElementById('taskCommandInput').value.trim();
-            var tid = editTaskId.value;
-
-            if (!name) {
-                scheduledTaskError.textContent = '任务名称不能为空';
-                scheduledTaskError.style.display = 'block';
-                return;
-            }
-            if (cron.split(/\s+/).length !== 5) {
-                scheduledTaskError.textContent = 'Cron 表达式格式错误，需要5个字段（分 时 日 月 周）';
-                scheduledTaskError.style.display = 'block';
-                return;
-            }
-            if (action === 'execute' && !command) {
-                scheduledTaskError.textContent = '执行命令不能为空';
-                scheduledTaskError.style.display = 'block';
-                return;
-            }
-
-            var payload = { name: name, action: action, cron: cron, client_id: clientId, command: command };
-            var url = tid ? '/scheduled_tasks/' + tid : '/scheduled_tasks';
-            var method = tid ? 'PUT' : 'POST';
-
-            $.ajax({
-                url: url,
-                method: method,
-                contentType: 'application/json',
-                data: JSON.stringify(payload),
-                success: function(resp) {
-                    closeScheduledModal();
-                    loadScheduledTasks();
-                },
-                error: function(xhr) {
-                    var msg = '保存失败';
-                    try { msg = JSON.parse(xhr.responseText).error || msg; } catch(e) {}
-                    scheduledTaskError.textContent = msg;
-                    scheduledTaskError.style.display = 'block';
-                }
-            });
-        });
-
-        function loadScheduledTasks() {
-            $.ajax({
-                url: '/scheduled_tasks',
-                method: 'GET',
-                success: function(tasks) {
-                    renderScheduledTasks(tasks);
-                }
-            });
-        }
-
-        function renderScheduledTasks(tasks) {
-            var container = document.getElementById('scheduledTaskList');
-            var countEl = document.getElementById('scheduledCount');
-            countEl.textContent = tasks.length;
-
-            if (tasks.length === 0) {
-                container.innerHTML = '<div style="grid-column:1/-1;"><div class="empty-state"><div class="empty-icon">⏰</div><div class="empty-title">暂无定时任务</div><div class="empty-desc">点击"新建任务"创建定时拍照、截图或执行命令的计划</div></div></div>';
-                return;
-            }
-
-            container.innerHTML = tasks.map(function(task) {
-                var cardClass = task.enabled ? 'task-card' : 'task-card disabled';
-                var actionLabel = _actionLabel(task.action);
-                var cronHuman = _cronHumanize(task.cron);
-                var clientLabel = _clientDisplayName(task.client_id);
-                var nextRun = task.next_run || '-';
-                var lastRun = task.last_run || '-';
-                var lastResult = task.last_result || '-';
-
-                return '<div class="' + cardClass + '" data-task-id="' + escapeHtml(task.task_id) + '">' +
-                    '<div class="task-header">' +
-                        '<div class="task-name">' + actionLabel + ' ' + escapeHtml(task.name) + '</div>' +
-                        '<div style="display:flex;align-items:center;gap:10px;">' +
-                            '<label class="toggle-switch">' +
-                                '<input type="checkbox" ' + (task.enabled ? 'checked' : '') + ' data-toggle-id="' + escapeHtml(task.task_id) + '">' +
-                                '<span class="toggle-slider"></span>' +
-                            '</label>' +
-                            '<div class="task-actions">' +
-                                '<button class="btn btn-sm" style="background:var(--light-gray);color:var(--text);" data-edit-id="' + escapeHtml(task.task_id) + '">✏️</button>' +
-                                '<button class="btn btn-secondary btn-sm" data-trigger-id="' + escapeHtml(task.task_id) + '">▶ 立即执行</button>' +
-                                '<button class="btn btn-danger btn-sm" data-delete-id="' + escapeHtml(task.task_id) + '">🗑️</button>' +
-                            '</div>' +
-                        '</div>' +
-                    '</div>' +
-                    '<div class="task-meta">' +
-                        '<span>🕐 计划：' + escapeHtml(cronHuman) + '（' + escapeHtml(task.cron) + '）</span>' +
-                        '<span>🖥️ 目标：' + escapeHtml(clientLabel) + '</span>' +
-                        (task.action === 'execute' ? '<span>💻 命令：' + escapeHtml(task.command || '') + '</span>' : '') +
-                        '<span>⏭ 下次执行：' + escapeHtml(nextRun) + '</span>' +
-                        '<span>✅ 上次执行：' + escapeHtml(lastRun) + (lastResult !== '-' ? ' — ' + escapeHtml(lastResult) : '') + '</span>' +
-                    '</div>' +
-                '</div>';
-            }).join('');
-
-            container.querySelectorAll('[data-toggle-id]').forEach(function(toggle) {
-                toggle.addEventListener('change', function() {
-                    var tid = this.getAttribute('data-toggle-id');
-                    var enabled = this.checked;
-                    $.ajax({
-                        url: '/scheduled_tasks/' + tid,
-                        method: 'PUT',
-                        contentType: 'application/json',
-                        data: JSON.stringify({ enabled: enabled }),
-                        success: function() { loadScheduledTasks(); }
-                    });
-                });
-            });
-
-            container.querySelectorAll('[data-edit-id]').forEach(function(btn) {
-                btn.addEventListener('click', function() {
-                    var tid = this.getAttribute('data-edit-id');
-                    $.ajax({
-                        url: '/scheduled_tasks',
-                        method: 'GET',
-                        success: function(tasks) {
-                            var task = tasks.find(function(t) { return t.task_id === tid; });
-                            if (task) openScheduledModal(task);
-                        }
-                    });
-                });
-            });
-
-            container.querySelectorAll('[data-trigger-id]').forEach(function(btn) {
-                btn.addEventListener('click', function() {
-                    var tid = this.getAttribute('data-trigger-id');
-                    $.ajax({
-                        url: '/scheduled_tasks/' + tid + '/trigger',
-                        method: 'POST',
-                        success: function(resp) {
-                            setTimeout(loadScheduledTasks, 1000);
-                        }
-                    });
-                });
-            });
-
-            container.querySelectorAll('[data-delete-id]').forEach(function(btn) {
-                btn.addEventListener('click', function() {
-                    var tid = this.getAttribute('data-delete-id');
-                    if (!confirm('确定删除此定时任务？')) return;
-                    $.ajax({
-                        url: '/scheduled_tasks/' + tid,
-                        method: 'DELETE',
-                        success: function() { loadScheduledTasks(); }
-                    });
-                });
-            });
-        }
-
-        // Auto-refresh scheduled tasks when tab is active
-        var scheduledRefreshInterval = null;
-        document.querySelectorAll('.tab').forEach(function(tab) {
-            tab.addEventListener('click', function() {
-                var tabId = this.getAttribute('data-tab');
-                if (scheduledRefreshInterval) {
-                    clearInterval(scheduledRefreshInterval);
-                    scheduledRefreshInterval = null;
-                }
-                if (tabId === 'scheduled') {
-                    loadScheduledTasks();
-                    scheduledRefreshInterval = setInterval(loadScheduledTasks, 15000);
-                }
-            });
-        });
-
-        // Initial load
-        loadScheduledTasks();
     </script>
 </body>
 </html>
